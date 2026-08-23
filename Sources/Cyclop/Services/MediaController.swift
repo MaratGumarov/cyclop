@@ -130,7 +130,9 @@ final class MediaController: ObservableObject {
     func revealSource() {
         guard let app = sourceApp else { return }
         app.activate()
-        guard let title = track?.title, !title.isEmpty,
+        // The app's own name stands in for a missing title; searching tabs
+        // for "Arc" would land on nothing useful.
+        guard let title = track?.title, !title.isEmpty, title != sourceName,
               let script = BrowserTabs.selectScript(bundleID: app.bundleIdentifier ?? "", titleContains: title)
         else { return }
         PlayerBridge.runScript(script) { _ in }

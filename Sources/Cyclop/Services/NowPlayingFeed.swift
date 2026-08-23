@@ -215,6 +215,13 @@ final class NowPlayingFeed {
         if let codes = object["commands"] as? [Int] {
             snapshot.commands = Set(codes)
         }
+        // A page that never set MediaSession metadata still holds a real
+        // session: playing, with a length. Name it after the app, or the
+        // panel would show nothing at all while the sound goes on.
+        if snapshot.title.isEmpty, snapshot.isPlaying || snapshot.duration > 0,
+           let source = snapshot.source {
+            snapshot.title = source
+        }
         onUpdate?(snapshot)
     }
 }
