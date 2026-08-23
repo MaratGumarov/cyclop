@@ -122,10 +122,18 @@ final class MediaController: ObservableObject {
         }
     }
 
-    /// Brings the source forward. For a browser that is the browser, not the
-    /// tab — which tab holds the session is something macOS does not tell.
+    /// Brings the source forward. macOS does not say which browser tab owns
+    /// the session, so for a browser the tab is found by name: whatever is
+    /// playing almost always puts its title in the page title. That needs one
+    /// AppleScript, and with it the Automation permission — asked on the
+    /// first click, never before.
     func revealSource() {
-        sourceApp?.activate()
+        guard let app = sourceApp else { return }
+        app.activate()
+        guard let title = track?.title, !title.isEmpty,
+              let script = BrowserTabs.selectScript(bundleID: app.bundleIdentifier ?? "", titleContains: title)
+        else { return }
+        PlayerBridge.runScript(script) { _ in }
     }
 
     // MARK: - Feed
