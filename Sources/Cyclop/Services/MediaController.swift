@@ -20,6 +20,8 @@ final class MediaController: ObservableObject {
     @Published private(set) var duration: TimeInterval = 0
     @Published private(set) var position: TimeInterval = 0
     @Published private(set) var sourceName: String?
+    /// Whoever owns the session — what a click on the artwork brings forward.
+    @Published private(set) var sourceApp: NSRunningApplication?
     /// Whether the player accepts skipping at all. A browser tab playing one
     /// video registers no handler for it — the command leaves and nothing
     /// happens — so the buttons go dim rather than dead, the way the system's
@@ -120,6 +122,12 @@ final class MediaController: ObservableObject {
         }
     }
 
+    /// Brings the source forward. For a browser that is the browser, not the
+    /// tab — which tab holds the session is something macOS does not tell.
+    func revealSource() {
+        sourceApp?.activate()
+    }
+
     // MARK: - Feed
 
     private func apply(_ snapshot: NowPlayingFeed.Snapshot) {
@@ -130,6 +138,7 @@ final class MediaController: ObservableObject {
         isPlaying = snapshot.isPlaying || snapshot.rate > 0
         duration = snapshot.duration
         sourceName = snapshot.source
+        sourceApp = snapshot.sourceApp
         // Both directions travel together: no player has ever offered one
         // without the other, and two separately dimmed arrows would read as
         // a glitch rather than a limit.
@@ -187,6 +196,7 @@ final class MediaController: ObservableObject {
         duration = 0
         position = 0
         sourceName = nil
+        sourceApp = nil
         canSkip = true
         updateTicker()
     }
@@ -223,6 +233,7 @@ final class MediaController: ObservableObject {
 
             self.activeApp = state.app
             self.sourceName = state.app.displayName
+            self.sourceApp = NSRunningApplication.runningApplications(withBundleIdentifier: state.app.bundleID).first
             self.track = Track(title: state.title, artist: state.artist, album: state.album, key: state.key)
             self.isPlaying = state.isPlaying
             self.duration = state.duration

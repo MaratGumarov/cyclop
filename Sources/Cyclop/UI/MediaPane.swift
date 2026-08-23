@@ -15,11 +15,14 @@ struct MediaPane: View {
         if let track = media.track {
             HStack(spacing: 18) {
                 artwork(for: track)
+                    .onTapGesture { media.revealSource() }
+                    .help(media.sourceName.map { localized("Open %@", $0) } ?? "")
                 VStack(alignment: .leading, spacing: 0) {
                     Text(track.title)
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(.white)
                         .lineLimit(1)
+                        .onTapGesture { media.revealSource() }
                     Text(subtitle(for: track))
                         .font(.system(size: 11.5))
                         .foregroundStyle(Theme.secondary)
