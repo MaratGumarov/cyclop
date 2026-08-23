@@ -58,9 +58,12 @@ struct MediaPane: View {
     private func artwork(for track: MediaController.Track) -> some View {
         ZStack {
             if let image = media.artwork {
+                // `.fit`, not `.fill`: a 16:9 thumbnail — what a video in a
+                // browser tab publishes — would otherwise lose a third of
+                // itself on either side. Square covers fill the box anyway.
                 Image(nsImage: image)
                     .resizable()
-                    .aspectRatio(contentMode: .fill)
+                    .aspectRatio(contentMode: .fit)
                     .transition(.opacity)
             } else {
                 SkeletonBox(cornerRadius: 14)
@@ -68,13 +71,8 @@ struct MediaPane: View {
         }
         .frame(width: 118, height: 118)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        // The same shape again, this time for the pointer. `clipShape` hides
-        // the overflow but does not stop it being touched, and `.fill` on a
-        // cover that is not square overflows a long way: a 16:9 thumbnail —
-        // what a video in a browser tab publishes — comes out 211 pt wide in
-        // this 118 pt box, so 46 pt of invisible picture hangs over each side.
-        // The left side is the tab rail, and the four icons behind that
-        // overhang stopped answering the pointer (#22).
+        // The same shape again, this time for the pointer: `clipShape` hides
+        // overflow but does not stop it being touched (#22).
         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
