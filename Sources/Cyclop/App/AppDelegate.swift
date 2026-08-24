@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -7,11 +8,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var privacyItem: NSMenuItem?
     private var privacyAllItem: NSMenuItem?
     private var privacySectionItems: [PrivacyMode.Section: NSMenuItem] = [:]
+    private var stopRecordingItem: NSMenuItem?
+    private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         controller = NotchController()
         controller?.install()
         installStatusItem()
+
+        // The icon is the one part of the app that is on screen at all times,
+        // which makes it the only honest place to say that a microphone and the
+        // system's audio are being written to a file. macOS shows indicators of
+        // its own; this app owes its own switch its own light.
+        controller?.recorder.$session
+            .sink { [weak self] session in
+                MainActor.assumeIsolated { self?.refreshStatusIcon(recording: session != nil) }
+            }
+            .store(in: &cancellables)
+    }
+
+    /// A recording in flight is finished before the process goes away. The
+    /// file is a container that has to be closed properly, and one that is not
+    /// is not a shorter recording — it is no recording at all.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let recorder = controller?.recorder, recorder.isRecording else { return .terminateNow }
+        // No mixdown on the way out: closing the file is what saves it, and
+        // flattening it is what would keep the user waiting.
+        recorder.stop(mix: false) {
+            DispatchQueue.main.async { NSApp.reply(toApplicationShouldTerminate: true) }
+        }
+        return .terminateLater
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -22,11 +48,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func installStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.button?.image = NSImage(
-            systemSymbolName: "eye.fill",
-            accessibilityDescription: "Cyclop"
-        )
-        item.button?.image?.isTemplate = true
 
         let menu = NSMenu()
         menu.delegate = self
@@ -40,6 +61,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         )
         toggle.target = self
         menu.addItem(toggle)
+
+        // Hidden unless something is being recorded, and above the panel switch
+        // when it is: it is what somebody opens this menu in a hurry for.
+        let stop = NSMenuItem(
+            title: localized("Stop recording"),
+            action: #selector(stopRecording),
+            keyEquivalent: ""
+        )
+        stop.target = self
+        stop.isHidden = true
+        menu.insertItem(stop, at: 2)
+        stopRecordingItem = stop
 
         // Sits next to the panel switch rather than in the Settings tab: it
         // changes what the panel shows, and it is the one people look for in a
@@ -82,16 +115,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         item.menu = menu
         statusItem = item
+        // The idle look is described once, by the same function that describes
+        // the recording one.
+        refreshStatusIcon(recording: false)
     }
 
     @objc private func togglePanel() {
         controller?.toggle()
     }
 
+    @objc private func stopRecording() {
+        controller?.recorder.stop()
+    }
+
+    private func refreshStatusIcon(recording: Bool) {
+        guard let button = statusItem?.button else { return }
+        button.image = NSImage(
+            systemSymbolName: recording ? "record.circle" : "eye.fill",
+            accessibilityDescription: recording ? localized("Stop recording") : "Cyclop"
+        )
+        button.image?.isTemplate = !recording
+        button.contentTintColor = recording ? .systemRed : nil
+    }
+
     /// Everything shown is re-read when the menu opens, not kept fresh in
     /// between: a menu nobody is looking at deserves no bookkeeping.
     func menuWillOpen(_ menu: NSMenu) {
         refreshPrivacyItems()
+        let recorder = controller?.recorder
+        stopRecordingItem?.isHidden = !(recorder?.isRecording ?? false)
+        if let recorder, recorder.isRecording {
+            stopRecordingItem?.title = localized("Stop recording (%@)", formatTime(recorder.elapsed))
+        }
     }
 
     @objc private func quit() {

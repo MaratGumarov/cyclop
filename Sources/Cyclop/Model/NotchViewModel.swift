@@ -110,13 +110,19 @@ final class NotchViewModel: ObservableObject {
     let snippets: SnippetStore
     let notes: NoteStore
     let teleprompter: TeleprompterStore
+    /// Handed in rather than made here, and it is the only store that is: a
+    /// recording outlives this object. Plugging in a display rebuilds the whole
+    /// panel, and a recording that ended because a monitor was connected
+    /// mid-call is a lost file, not a redraw.
+    let recorder: MeetingRecorder
     /// Shared by every pane that shows something worth not showing.
     let privacy = PrivacyMode()
 
     private var cancellables = Set<AnyCancellable>()
 
-    init(geometry: NotchGeometry) {
+    init(geometry: NotchGeometry, recorder: MeetingRecorder) {
         self.geometry = geometry
+        self.recorder = recorder
         self.media = MediaController()
         self.shelf = ShelfStore()
         self.clipboard = ClipboardStore()
@@ -150,6 +156,7 @@ final class NotchViewModel: ObservableObject {
             shelf.objectWillChange,
             clipboard.objectWillChange,
             calendar.objectWillChange,
+            recorder.objectWillChange,
         ] {
             child
                 .sink { [weak self] _ in

@@ -8,6 +8,8 @@ final class NotchController {
     private var rootView: NotchRootView?
     private var viewModel: NotchViewModel?
     private let pointer = PointerWatcher()
+    /// Outlives every rebuild — see `NotchViewModel.recorder`.
+    let recorder = MeetingRecorder()
     private var closeActiveRectWork: DispatchWorkItem?
     private var cancellables = Set<AnyCancellable>()
     /// Monotonic stamp for the deferred half of closing: any newer open or
@@ -109,7 +111,7 @@ final class NotchController {
 
     private func build() {
         let geometry = NotchGeometry.current()
-        let vm = NotchViewModel(geometry: geometry)
+        let vm = NotchViewModel(geometry: geometry, recorder: recorder)
         viewModel = vm
 
         let panel = NotchPanel(contentRect: geometry.windowFrame)
@@ -344,24 +346,19 @@ final class NotchController {
 
     private func applyActiveRect(open: Bool) {
         guard let vm = viewModel, let rootView else { return }
-        // Collapsed, the panel claims only its target strip — on a synthetic
-        // notch that is deliberately shallower than the menu bar, so clicks on
-        // status items underneath reach them instead of a panel nobody can see.
-        // The open size is the current tab's, not a constant: the teleprompter
-        // is taller, and a rect cut for 208 would leave the bottom half of it
-        // visible but untouchable.
+        // Collapsed, the panel claims only its target strip — on a
+        // synthetic notch that is deliberately shallower than the menu bar, so
+        // clicks on status items underneath reach them instead of a panel
+        // nobody can see. The open size is the current tab's, not a constant:
+        // the teleprompter is taller, and a rect cut for 208 would leave the
+        // bottom half of it visible but untouchable.
         let size = open ? vm.openBodySize : vm.geometry.collapsedSize
-        var rect = vm.geometry.contentRect(for: size)
-        if open {
-            // Slack so the concave shoulders stay grabbable. Never while
-            // collapsed: that would swallow clicks on menu bar items next to
-            // the notch.
-            rect = rect.insetBy(dx: -Theme.openTopRadius, dy: 0)
-        }
-        rootView.activeRect = rect
-        pointer.interactiveRect = vm.geometry
-            .contentScreenRect(for: size)
-            .insetBy(dx: open ? -Theme.openTopRadius : 0, dy: 0)
+        // Slack so the concave shoulders stay grabbable. Never while
+        // collapsed: that would swallow clicks on menu bar items next to
+        // the notch.
+        let slack = open ? -Theme.openTopRadius : 0
+        rootView.activeRect = vm.geometry.contentRect(for: size).insetBy(dx: slack, dy: 0)
+        pointer.interactiveRect = vm.geometry.contentScreenRect(for: size).insetBy(dx: slack, dy: 0)
     }
 }
 

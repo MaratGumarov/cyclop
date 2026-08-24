@@ -44,6 +44,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <string>Cyclop показывает ближайшие встречи и кнопку подключения к ним.</string>
     <key>NSCalendarsUsageDescription</key>
     <string>Cyclop показывает ближайшие встречи и кнопку подключения к ним.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Cyclop записывает встречу — ваш микрофон и звук самого Mac — по кнопке «Записать» и только по ней.</string>
     <key>NSHumanReadableCopyright</key><string>MIT License</string>
 </dict>
 </plist>

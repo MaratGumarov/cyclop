@@ -48,6 +48,12 @@ struct SettingsPane: View {
                     }
                 }
 
+                section(localized("Recordings")) {
+                    actionRow(symbol: "folder", title: localized("Show Recordings Folder")) {
+                        MeetingRecorder.reveal()
+                    }
+                }
+
                 section(localized("Snippets")) {
                     actionRow(symbol: "doc.text", title: localized("Show Snippets File")) {
                         SnippetStore.reveal()

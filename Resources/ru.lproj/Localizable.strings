@@ -99,3 +99,16 @@
 "Ready" = "Готово";
 "Done" = "Готово";
 "Open %@" = "Открыть %@";
+
+/* Запись встречи: звук самого Mac и то, что слышит микрофон. */
+"Record" = "Записать";
+"Join and record the meeting" = "Подключиться и записать встречу";
+"Stop recording" = "Остановить запись";
+"Stop recording (%@)" = "Остановить запись (%@)";
+"Recordings" = "Записи";
+"Show Recordings Folder" = "Показать папку записей";
+"Meeting" = "Встреча";
+"Allow Cyclop in Settings → Privacy → Screen & System Audio Recording, then restart it" = "Разрешите Cyclop в «Настройки → Конфиденциальность → Запись экрана и звука» и перезапустите его";
+"No display to capture audio from" = "Нет дисплея, с которого брать звук";
+"Could not open the recording file" = "Не удалось открыть файл записи";
+"Stop recording · %@" = "Остановить запись · %@";

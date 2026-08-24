@@ -100,3 +100,16 @@
 "Ready" = "Ready";
 "Done" = "Done";
 "Open %@" = "Open %@";
+
+/* Recording a meeting: what the Mac plays and what the microphone hears. */
+"Record" = "Record";
+"Join and record the meeting" = "Join and record the meeting";
+"Stop recording" = "Stop recording";
+"Stop recording (%@)" = "Stop recording (%@)";
+"Recordings" = "Recordings";
+"Show Recordings Folder" = "Show Recordings Folder";
+"Meeting" = "Meeting";
+"Allow Cyclop in Settings → Privacy → Screen & System Audio Recording, then restart it" = "Allow Cyclop in Settings → Privacy → Screen & System Audio Recording, then restart it";
+"No display to capture audio from" = "No display to capture audio from";
+"Could not open the recording file" = "Could not open the recording file";
+"Stop recording · %@" = "Stop recording · %@";

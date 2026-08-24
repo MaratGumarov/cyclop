@@ -3,6 +3,7 @@ import SwiftUI
 struct CalendarPane: View {
     @ObservedObject var calendar: CalendarStore
     @ObservedObject var privacy: PrivacyMode
+    @ObservedObject var recorder: MeetingRecorder
 
     /// One cover for the whole tab rather than one per meeting: the agenda is a
     /// dense list of short rows, and a column of eyes in it would be louder
@@ -133,31 +134,76 @@ struct CalendarPane: View {
 
                 Spacer(minLength: 10)
 
-                if next.link != nil {
-                    Button {
-                        calendar.join(next)
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "video.fill").font(.system(size: 10))
-                            Text(next.provider.map { localized("Join · %@", $0) } ?? localized("Join"))
-                                .font(.system(size: 11, weight: .medium))
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .background(
-                            Capsule().fill(next.isRunning ? Color.white.opacity(0.92) : Theme.surfaceHover)
-                        )
-                        .foregroundStyle(next.isRunning ? .black : .white)
-                    }
-                    .buttonStyle(.plain)
+                controls(for: next)
                     .padding(.leading, 14)
-                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
             rest
         }
         .padding(.top, 4)
+    }
+
+    /// The row of buttons under the next meeting.
+    ///
+    /// Two ways in, because they are two different decisions: joining is what
+    /// one does forty times a week, recording is what one does on purpose. The
+    /// recording button is never the wider of the two and never the brighter —
+    /// a mistaken press on it is a file of a conversation nobody agreed to
+    /// record, so it should be the one that has to be aimed at.
+    @ViewBuilder
+    private func controls(for next: CalendarStore.Meeting) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 7) {
+                if next.link != nil {
+                    joinPill(next)
+                    if !recorder.isRecording {
+                        recordPill(next)
+                    }
+                }
+                // Shown whatever is on screen: a recording started for one
+                // meeting outlives it, and the way to stop it must not depend
+                // on which meeting the agenda happens to be showing.
+                if recorder.isRecording {
+                    StopRecordingPill(recorder: recorder)
+                }
+            }
+            if let failure = recorder.failure {
+                Text(failure)
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(Color.red.opacity(0.85))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func joinPill(_ meeting: CalendarStore.Meeting) -> some View {
+        MeetingPill(
+            symbol: "video.fill",
+            title: Text(meeting.provider.map { localized("Join · %@", $0) } ?? localized("Join")),
+            // A meeting already under way gets the bright capsule: by then
+            // joining is the only thing anybody opened this tab for.
+            style: meeting.isRunning ? .prominent : .neutral
+        ) {
+            calendar.join(meeting)
+        }
+    }
+
+    /// Joins and starts recording in one press. The link is opened first: the
+    /// call is what one is late for, and the two permissions the recording
+    /// needs can take a moment to answer.
+    private func recordPill(_ meeting: CalendarStore.Meeting) -> some View {
+        MeetingPill(
+            symbol: "record.circle",
+            title: Text(localized("Record")),
+            style: .quiet,
+            symbolTint: Color.red.opacity(0.9)
+        ) {
+            calendar.join(meeting)
+            recorder.start(for: meeting)
+        }
+        .help(localized("Join and record the meeting"))
     }
 
     /// Everything after the next meeting, as a column on the right. A meeting
