@@ -41,6 +41,9 @@ struct NotchContentView: View {
             .frame(width: size.width, height: size.height, alignment: .top)
             .clipped()
         }
+        .overlay(alignment: .bottom) {
+            RecordingMark(recorder: vm.recorder, visible: !isOpen && peek == nil)
+        }
         .frame(width: size.width + 2 * topRadius, height: size.height, alignment: .top)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(Theme.openAnimation, value: isOpen)
@@ -79,8 +82,18 @@ struct NotchContentView: View {
         .frame(height: vm.geometry.notchSize.height)
     }
 
-    @ViewBuilder
     private var trailing: some View {
+        HStack(spacing: 8) {
+            // Ahead of whatever the tab has to say, and on every tab: which tab
+            // one happens to be looking at is no reason to not know that a
+            // microphone is open.
+            RecordingBadge(recorder: vm.recorder)
+            tabTrailing
+        }
+    }
+
+    @ViewBuilder
+    private var tabTrailing: some View {
         switch vm.tab {
         case .media:
             HStack(spacing: 6) {
@@ -181,6 +194,58 @@ struct NotchContentView: View {
             TeleprompterPane(prompter: vm.teleprompter, wantsKeyboard: $vm.wantsKeyboard)
         case .settings:
             SettingsPane(shelf: vm.shelf)
+        }
+    }
+}
+
+/// The red mark under the collapsed notch, and the only thing on screen while
+/// the panel is folded away that says a recording is running.
+///
+/// It watches the recorder itself rather than reading through the view model,
+/// which forwards its children only while somebody is looking at the panel —
+/// and the whole point of this mark is the hour when nobody is.
+///
+/// A bar along the bottom edge rather than a dot in the middle of the notch: a
+/// red dot next to the camera says the camera is on, which is the one thing
+/// this recording is not.
+private struct RecordingMark: View {
+    @ObservedObject var recorder: MeetingRecorder
+    /// The panel and the peek both say it louder; this is for the state where
+    /// nothing else does.
+    let visible: Bool
+
+    @State private var dim = false
+
+    var body: some View {
+        if visible, recorder.isRecording {
+            Capsule()
+                .fill(Color.red)
+                .frame(width: 46, height: 3)
+                .padding(.bottom, 3)
+                .opacity(dim ? 0.35 : 1)
+                .animation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true), value: dim)
+                .onAppear { dim = true }
+                .onDisappear { dim = false }
+                .transition(.opacity)
+                .allowsHitTesting(false)
+        }
+    }
+}
+
+/// The counter in the panel's header, shown on whichever tab is open.
+private struct RecordingBadge: View {
+    @ObservedObject var recorder: MeetingRecorder
+
+    var body: some View {
+        if let session = recorder.session {
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(Color.red)
+                    .frame(width: 5, height: 5)
+                Text(timerInterval: session.started...Date.distantFuture, countsDown: false)
+                    .font(.system(size: 10, weight: .medium).monospacedDigit())
+                    .foregroundStyle(Color.white.opacity(0.8))
+            }
         }
     }
 }

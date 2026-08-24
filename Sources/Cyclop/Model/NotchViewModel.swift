@@ -279,9 +279,12 @@ final class NotchViewModel: ObservableObject {
         clipboard.wantsImages = { Self.saveClipboardImagesEnabled }
         clipboard.onImage = { [weak self] png in
             guard let self, let url = ScreenshotVault.save(png) else { return }
-            self.receivedScreenshot(at: url)
+            self.received(url)
         }
         clipboard.start()
+
+        // The recording says where it went the moment it is written.
+        recorder.onFinished = { [weak self] url in self?.received(url) }
     }
 
     func stop() {
@@ -292,15 +295,18 @@ final class NotchViewModel: ObservableObject {
         notes.flush()
     }
 
-    /// A screenshot that arrived on its own — copied elsewhere, or synced
-    /// from a phone by Continuity — rather than one the user handed to the
-    /// panel directly. It goes on the shelf either way, but only switches to
-    /// showing it when nobody is mid-sentence: the tab's own field would
+    /// A file that arrived on its own — a screenshot copied elsewhere or synced
+    /// from a phone by Continuity, a recording that has just finished writing —
+    /// rather than one the user handed to the panel directly.
+    ///
+    /// It goes on the shelf either way, which is the answer to "where did it
+    /// go": a card that can be dragged straight into a chat, opened, or shown
+    /// in Finder, instead of a path in a folder nobody opens. It only switches
+    /// to showing it when nobody is mid-sentence: the tab's own field would
     /// slide out from under the caret, and losing the keyboard mid-word sends
-    /// the rest of the sentence to whatever is underneath. The shelf's
-    /// counter already shows the new picture, so nothing about it is lost by
-    /// waiting.
-    func receivedScreenshot(at url: URL) {
+    /// the rest of the sentence to whatever is underneath. The shelf's counter
+    /// shows the new card regardless, so nothing is lost by waiting.
+    func received(_ url: URL) {
         shelf.add([url])
         guard !wantsKeyboard else { return }
         tab = .shelf

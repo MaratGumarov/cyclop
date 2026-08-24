@@ -38,6 +38,9 @@ final class MeetingRecorder: ObservableObject {
     /// `CalendarStore.onAlert`, and kept out of the published state for the
     /// same reason.
     var onMeetingEnded: (() -> Void)?
+    /// The finished file, once it is written and mixed down. A recording that
+    /// lands in a folder nobody opens is a recording nobody has.
+    var onFinished: ((URL) -> Void)?
 
     private var stream: SCStream?
     private var sink: AudioSink?
@@ -188,9 +191,12 @@ final class MeetingRecorder: ObservableObject {
         endWatch?.invalidate()
         endWatch = nil
 
-        Task.detached {
+        Task.detached { [weak self] in
             try? await stream?.stopCapture()
             await sink?.finish(mix: mix)
+            if let url = sink?.finalURL, FileManager.default.fileExists(atPath: url.path) {
+                await MainActor.run { self?.onFinished?(url) }
+            }
             completion?()
         }
     }
@@ -264,7 +270,7 @@ final class AudioSink: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Se
     /// Called if the stream stops on its own.
     var onFailure: ((String) -> Void)?
 
-    private let finalURL: URL
+    let finalURL: URL
     private let workingURL: URL
     private let wantsMicrophone: Bool
 

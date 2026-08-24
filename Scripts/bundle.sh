@@ -74,7 +74,31 @@ clang -dynamiclib -fobjc-arc -O2 \
     -o "$APP/Contents/Resources/libcyclopmedia.dylib" \
     "$ROOT/Sources/CyclopMediaHelper/helper.m"
 
-echo "==> ad-hoc signing"
+# Подпись. Ad-hoc — запасной вариант, а не желаемый: у неё нет постоянной
+# личности, «удостоверением» служит cdhash самого бинарника, и любая пересборка
+# делает бандл для TCC другим приложением. Разрешения на календарь, микрофон и
+# запись экрана после каждой установки приходится выдавать заново — а выданные
+# висят в «Настройках» включёнными и мешают понять, что происходит.
+#
+# Постоянный самоподписанный сертификат это снимает: разрешение привязывается к
+# нему, а не к хешу. Создаётся один раз (Связка ключей → Ассистент сертификации
+# → создать самоподписанный, тип «Подпись кода»), дальше указывается здесь:
+#
+#     CYCLOP_SIGN_IDENTITY="Cyclop Dev" ./Scripts/bundle.sh
+#
+# или один раз на машину: security find-identity -v -p codesigning — и имя из
+# вывода в ~/.zshrc как export CYCLOP_SIGN_IDENTITY.
+IDENTITY="${CYCLOP_SIGN_IDENTITY:-}"
+if [ -z "$IDENTITY" ] && security find-identity -v -p codesigning 2>/dev/null | grep -q "Cyclop Dev"; then
+    IDENTITY="Cyclop Dev"
+fi
+
+if [ -n "$IDENTITY" ]; then
+    echo "==> signing as $IDENTITY"
+else
+    echo "==> ad-hoc signing (разрешения слетят при следующей установке — см. комментарий выше)"
+    IDENTITY="-"
+fi
 # Расширенные атрибуты снимаются первыми. iCloud вешает на файлы
 # com.apple.FinderInfo, а codesign отказывается подписывать что-либо с ним —
 # «resource fork, Finder information, or similar detritus not allowed». Папка
@@ -87,7 +111,7 @@ echo "==> ad-hoc signing"
 # бандл, про который codesign говорит «code object is not signed at all».
 # Заметить это можно было только по возвращающимся запросам TCC — то есть у
 # того, кто уже поставил приложение.
-codesign --force --deep --sign - "$APP" || {
+codesign --force --deep --sign "$IDENTITY" "$APP" || {
     echo "!!! codesign не смог подписать бандл — см. вывод выше" >&2
     exit 1
 }
