@@ -10,8 +10,15 @@ import AppKit
 /// identically everywhere, at the cost of one cursor-position read per frame.
 @MainActor
 final class PointerWatcher {
-    /// Entering this opens the panel, in screen coordinates.
-    var openRect: CGRect = .zero
+    /// Entering any of these opens the panel, in screen coordinates.
+    ///
+    /// A list rather than one rect, because the collapsed panel is not always
+    /// one shape: while it shows a row under the notch, that row opens it too,
+    /// and it is wider than the notch and hangs below the menu bar. The
+    /// smallest rect containing both would also contain the stretch of menu bar
+    /// to either side of the notch — every entry point union'd into one becomes
+    /// the panel unfolding over the status items somebody was reaching for.
+    var openRects: [CGRect] = []
     /// Leaving this closes the panel, in screen coordinates.
     var closeRect: CGRect = .zero
     /// Where the panel takes clicks. Everywhere else the window must let them
@@ -133,7 +140,9 @@ final class PointerWatcher {
             onInteractiveChange?(interactive)
         }
 
-        let inside = (isInside ? closeRect : openRect).contains(point)
+        let inside = isInside
+            ? closeRect.contains(point)
+            : openRects.contains { $0.contains(point) }
 
         // Whether the panel is open and where the pointer is are two separate
         // facts, and only one of them is tracked here. They are supposed to

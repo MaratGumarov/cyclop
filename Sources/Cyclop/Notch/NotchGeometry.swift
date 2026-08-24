@@ -26,6 +26,59 @@ struct NotchGeometry {
     /// free to give.
     let expandedSize = CGSize(width: 620, height: 208)
 
+    /// Height the peek adds under the notch — one row, and only one.
+    ///
+    /// The peek is not a small panel: it is the notch itself, grown just enough
+    /// to say a sentence and hold two buttons. Anything taller starts covering
+    /// the window underneath, which is what the panel is for and what the peek
+    /// must never become — it hangs there for a whole minute without being
+    /// asked.
+    static let peekRowHeight: CGFloat = 36
+
+    /// The peek, wide enough for a meeting title, a countdown and two buttons.
+    var peekSize: CGSize {
+        CGSize(width: notchSize.width + 320, height: notchSize.height + Self.peekRowHeight)
+    }
+
+    /// The trailing slice of the peek row that belongs to its buttons.
+    ///
+    /// The buttons are laid out into exactly this width and the hover target
+    /// stops exactly where it begins, so that aiming at "Join" does not unfold
+    /// the panel and move the button out from under the pointer. One constant
+    /// for both, because the day they disagree is the day the button runs away
+    /// again.
+    static let peekActionsWidth: CGFloat = 236
+
+    /// What opens the panel while a peek is up: the row, minus its buttons.
+    ///
+    /// Grown downwards and sideways like every other hover target here, so the
+    /// panel opens just before the pointer lands — but never upwards, however
+    /// much `hoverRect` does: above this row is the menu bar.
+    var peekHoverRect: CGRect {
+        let row = peekRowScreenRect
+        return CGRect(
+            x: row.minX - 6,
+            y: row.minY - 4,
+            width: max(0, row.width - Self.peekActionsWidth) + 6,
+            height: row.height + 4
+        )
+    }
+
+    /// The only part of the peek that takes clicks: the row below the notch.
+    ///
+    /// The top of the peek lies over the menu bar — the peek is wider than the
+    /// notch, so it does on a real cutout too, on both sides of it. Claiming
+    /// that row would swallow clicks on the status items sitting there, for a
+    /// minute, without anything visible to explain why.
+    var peekRowRect: CGRect {
+        let full = contentRect(for: peekSize)
+        return CGRect(x: full.minX, y: full.minY, width: full.width, height: Self.peekRowHeight)
+    }
+
+    var peekRowScreenRect: CGRect {
+        peekRowRect.offsetBy(dx: windowFrame.minX, dy: windowFrame.minY)
+    }
+
     /// Body for the teleprompter, the one tab that asks for more.
     ///
     /// Same width, so the panel does not change shape sideways — only the

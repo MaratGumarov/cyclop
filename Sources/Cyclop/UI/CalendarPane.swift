@@ -4,6 +4,9 @@ struct CalendarPane: View {
     @ObservedObject var calendar: CalendarStore
     @ObservedObject var privacy: PrivacyMode
     @ObservedObject var recorder: MeetingRecorder
+    /// Shared with the peek: the buttons below are the same buttons it shows,
+    /// so they travel between the two rather than appearing in both.
+    let hero: Namespace.ID
 
     /// One cover for the whole tab rather than one per meeting: the agenda is a
     /// dense list of short rows, and a column of eyes in it would be louder
@@ -157,15 +160,19 @@ struct CalendarPane: View {
             HStack(spacing: 7) {
                 if next.link != nil {
                     joinPill(next)
+                        .hero(.join, in: hero)
                     if !recorder.isRecording {
                         recordPill(next)
+                            .hero(.record, in: hero)
                     }
                 }
-                // Shown whatever is on screen: a recording started for one
-                // meeting outlives it, and the way to stop it must not depend
-                // on which meeting the agenda happens to be showing.
+                // Shown whatever is on screen, and it is the same pill the
+                // peek shows: a recording started for one meeting outlives it,
+                // and the way to stop it must not depend on which meeting the
+                // agenda happens to be showing.
                 if recorder.isRecording {
                     StopRecordingPill(recorder: recorder)
+                        .hero(.stop, in: hero)
                 }
             }
             if let failure = recorder.failure {

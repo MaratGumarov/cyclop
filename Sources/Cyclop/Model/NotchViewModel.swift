@@ -52,6 +52,30 @@ final class NotchViewModel: ObservableObject {
         static let rightRail: [Tab] = [.notes, .teleprompter, .settings]
     }
 
+    /// What the notch is showing while nobody is hovering it.
+    ///
+    /// Not a panel and not a notification: the notch itself, grown by one row.
+    /// It hangs there — that is the whole point — so it is only ever raised by
+    /// something that is true for a bounded stretch of time and stops being
+    /// true on its own.
+    enum Peek: Equatable {
+        /// A meeting that starts within the minute. Ends when it starts.
+        case meeting(CalendarStore.Meeting)
+        /// A recording still running past the end of the meeting it was
+        /// started for. Ends when the recording does.
+        case recording
+
+        /// Whether it is the kind that shows a countdown, and therefore the
+        /// kind that needs the calendar's clock running behind it.
+        var countsDown: Bool {
+            if case .meeting = self { return true }
+            return false
+        }
+    }
+
+    @Published private(set) var peek: Peek?
+    private var peekTimer: Timer?
+
     @Published var isOpen = false
     @Published var isDropTargeted = false
     @Published var tab: Tab = .media {
@@ -160,11 +184,38 @@ final class NotchViewModel: ObservableObject {
         ] {
             child
                 .sink { [weak self] _ in
-                    guard let self, self.isOpen || self.isDropTargeted else { return }
+                    guard let self, self.isOpen || self.isDropTargeted || self.peek != nil else { return }
                     self.objectWillChange.send()
                 }
                 .store(in: &cancellables)
         }
+    }
+
+    // MARK: - Peek
+
+    /// Raises the peek, optionally with the moment it stops being true.
+    func showPeek(_ peek: Peek, until: Date? = nil) {
+        peekTimer?.invalidate()
+        peekTimer = nil
+        self.peek = peek
+
+        guard let until else { return }
+        guard until > Date() else { return dismissPeek(peek) }
+        let timer = Timer(fire: until, interval: 0, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.dismissPeek(peek) }
+        }
+        timer.tolerance = 1
+        RunLoop.main.add(timer, forMode: .common)
+        peekTimer = timer
+    }
+
+    /// Takes it down. A peek can be named, so that one raised in the meantime
+    /// survives the timer of the one it replaced.
+    func dismissPeek(_ which: Peek? = nil) {
+        if let which, peek != which { return }
+        peekTimer?.invalidate()
+        peekTimer = nil
+        peek = nil
     }
 
     /// Body this tab takes when open — asked whether it is open yet or not.
@@ -186,7 +237,8 @@ final class NotchViewModel: ObservableObject {
 
     /// Size of the visible body for the current state.
     var bodySize: CGSize {
-        isOpen || isDropTargeted ? openBodySize : geometry.notchSize
+        if isOpen || isDropTargeted { return openBodySize }
+        return peek != nil ? geometry.peekSize : geometry.notchSize
     }
 
     /// Off switch for people who copy images all day and do not want them kept.

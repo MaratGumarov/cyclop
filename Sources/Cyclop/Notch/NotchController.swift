@@ -165,7 +165,7 @@ final class NotchController {
 
         applyActiveRect(open: false)
 
-        pointer.openRect = geometry.hoverRect
+        pointer.openRects = [geometry.hoverRect]
         pointer.warmZone = geometry.warmZone
         // Cut for the tab that will be showing, not for the standard body: a
         // rebuild restores the previous tab, and the teleprompter reaches
@@ -186,6 +186,11 @@ final class NotchController {
             // that are not the pointer, like the screen going to sleep, still
             // close a running teleprompter.
             if !inside, self.viewModel?.holdsOpen == true { return }
+            // A panel opened off a peek opens on what the peek was about. The
+            // pointer went there for the meeting, and landing on whatever tab
+            // was last used means the agenda is one more hover away — from a
+            // row that is no longer on screen to say where it went.
+            if inside, self.viewModel?.peek != nil { self.viewModel?.tab = .calendar }
             self.setOpen(inside)
         }
         // Everything outside the visible panel must reach the app underneath:
@@ -230,7 +235,52 @@ final class NotchController {
             }
             .store(in: &cancellables)
 
+        // The notch grows a row by itself twice: a minute before a meeting with
+        // a link, and when a meeting whose recording is still running was
+        // supposed to have ended. Neither opens the panel — a panel that
+        // unfolds over the screen for a minute is in the way of whatever one
+        // was doing, and the answer to "there is a meeting soon" is a sentence,
+        // not a whole agenda. The agenda stays one hover away.
+        vm.calendar.onAlert = { [weak self] meeting in
+            self?.viewModel?.showPeek(.meeting(meeting), until: meeting.start)
+        }
+        recorder.onMeetingEnded = { [weak self] in
+            self?.viewModel?.showPeek(.recording)
+        }
+        // The recording peek has no clock of its own: it is up for exactly as
+        // long as the recording is.
+        recorder.$session
+            .sink { [weak self] session in
+                MainActor.assumeIsolated {
+                    guard session == nil else { return }
+                    self?.viewModel?.dismissPeek(.recording)
+                }
+            }
+            .store(in: &cancellables)
+
+        // The peek claims a strip of screen that was click-through a moment
+        // ago, and gives it back when it goes. A pass later, for the same
+        // reason as the tab above: `@Published` fires while the property is
+        // still being set.
+        vm.$peek
+            .sink { [weak self] _ in
+                MainActor.assumeIsolated {
+                    DispatchQueue.main.async {
+                        self?.refreshCollapsedRects()
+                        self?.refreshCalendarClock()
+                    }
+                }
+            }
+            .store(in: &cancellables)
+
         vm.start()
+
+        // A recording that has already outlived its meeting keeps its row
+        // across a rebuild. The recorder survives one — that is why it is owned
+        // here — and the row it raises is the only Stop button on screen.
+        if recorder.isRecording, recorder.overran {
+            vm.showPeek(.recording)
+        }
 
         // A rebuilt panel starts closed. If the pointer is already sitting on
         // it, reopen at once instead of waiting for a trip back to the notch.
@@ -283,7 +333,7 @@ final class NotchController {
             applyActiveRect(open: true)
             withAnimation(Theme.openAnimation) { vm.isOpen = true }
             vm.media.setActive(true)
-            vm.calendar.setActive(true)
+            refreshCalendarClock()
         } else {
             // The keyboard goes first and the fold goes second — one run-loop
             // pass apart, never together. Dropped in the same pass, resigning
@@ -316,13 +366,39 @@ final class NotchController {
         vm.privacy.coverEverything()
         withAnimation(Theme.openAnimation) { vm.isOpen = false }
         vm.media.setActive(false)
-        vm.calendar.setActive(false)
+        refreshCalendarClock()
         // Shrink only once the panel has finished collapsing. Doing it
         // while it is still visibly there would leave a window in which
         // clicks land on whatever is behind the panel.
         let work = DispatchWorkItem { [weak self] in self?.applyActiveRect(open: false) }
         closeActiveRectWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: work)
+    }
+
+    /// Re-cuts the rects the collapsed panel claims. Only matters while the
+    /// panel is closed — open, they are cut from the body on screen.
+    private func refreshCollapsedRects() {
+        guard let vm = viewModel else { return }
+        // A peek is hovered the same way everything else here is: the pointer
+        // arrives, the panel unfolds. The row is part of the notch while it is
+        // up, so it opens the panel like the notch does. Updated even while the
+        // panel is open — a peek can expire under an open panel, and the strip
+        // it left behind would otherwise still be answering hovers.
+        pointer.openRects = vm.peek != nil
+            ? [vm.geometry.hoverRect, vm.geometry.peekHoverRect]
+            : [vm.geometry.hoverRect]
+        guard !vm.isOpen else { return }
+        applyActiveRect(open: false)
+    }
+
+    /// The calendar's own clock, which keeps a countdown honest — the one in
+    /// the panel's header and the one in a peek that is counting down. Written
+    /// from here and nowhere else: it was two writers for a while, and the
+    /// panel closing switched off the clock the peek still on screen was
+    /// reading.
+    private func refreshCalendarClock() {
+        guard let vm = viewModel else { return }
+        vm.calendar.setActive(vm.isOpen || vm.peek?.countsDown == true)
     }
 
     private func scheduleCollapseIfPointerAway() {
@@ -346,19 +422,33 @@ final class NotchController {
 
     private func applyActiveRect(open: Bool) {
         guard let vm = viewModel, let rootView else { return }
-        // Collapsed, the panel claims only its target strip — on a
-        // synthetic notch that is deliberately shallower than the menu bar, so
-        // clicks on status items underneath reach them instead of a panel
-        // nobody can see. The open size is the current tab's, not a constant:
-        // the teleprompter is taller, and a rect cut for 208 would leave the
-        // bottom half of it visible but untouchable.
-        let size = open ? vm.openBodySize : vm.geometry.collapsedSize
-        // Slack so the concave shoulders stay grabbable. Never while
-        // collapsed: that would swallow clicks on menu bar items next to
-        // the notch.
-        let slack = open ? -Theme.openTopRadius : 0
-        rootView.activeRect = vm.geometry.contentRect(for: size).insetBy(dx: slack, dy: 0)
-        pointer.interactiveRect = vm.geometry.contentScreenRect(for: size).insetBy(dx: slack, dy: 0)
+        let rect: CGRect
+        let screenRect: CGRect
+        if !open, vm.peek != nil {
+            // A peek is not a small panel: it claims its own row and nothing
+            // else. The row above it is the menu bar — the peek is wider than
+            // the notch, so it lies over the bar on both sides even where the
+            // notch is a real hole, and a minute of swallowed clicks on the
+            // status items there is not a trade this feature gets to make.
+            rect = vm.geometry.peekRowRect
+            screenRect = vm.geometry.peekRowScreenRect
+        } else {
+            // Collapsed, the panel claims only its target strip — on a
+            // synthetic notch that is deliberately shallower than the menu bar,
+            // so clicks on status items underneath reach them instead of a
+            // panel nobody can see. The open size is the current tab's, not a
+            // constant: the teleprompter is taller, and a rect cut for 208
+            // would leave the bottom half of it visible but untouchable.
+            let size = open ? vm.openBodySize : vm.geometry.collapsedSize
+            // Slack so the concave shoulders stay grabbable. Never while
+            // collapsed: that would swallow clicks on menu bar items next to
+            // the notch.
+            let slack = open ? -Theme.openTopRadius : 0
+            rect = vm.geometry.contentRect(for: size).insetBy(dx: slack, dy: 0)
+            screenRect = vm.geometry.contentScreenRect(for: size).insetBy(dx: slack, dy: 0)
+        }
+        rootView.activeRect = rect
+        pointer.interactiveRect = screenRect
     }
 }
 

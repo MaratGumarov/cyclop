@@ -3,7 +3,14 @@ import SwiftUI
 struct NotchContentView: View {
     @ObservedObject var vm: NotchViewModel
 
+    /// One namespace for the whole notch, because the two states it moves
+    /// between — the peek and the open calendar tab — live in different
+    /// branches of the same view.
+    @Namespace private var hero
+
     private var isOpen: Bool { vm.isOpen || vm.isDropTargeted }
+    /// The notch grown by one row, with nobody hovering it.
+    private var peek: NotchViewModel.Peek? { isOpen ? nil : vm.peek }
     private var size: CGSize { vm.bodySize }
     private var topRadius: CGFloat { isOpen ? Theme.openTopRadius : Theme.collapsedTopRadius }
 
@@ -13,7 +20,9 @@ struct NotchContentView: View {
         ZStack(alignment: .top) {
             NotchShape(
                 topRadius: topRadius,
-                bottomRadius: isOpen ? Theme.openBottomRadius : Theme.collapsedBottomRadius
+                bottomRadius: isOpen
+                    ? Theme.openBottomRadius
+                    : (peek != nil ? Theme.peekBottomRadius : Theme.collapsedBottomRadius)
             )
             .fill(Color.black)
             .frame(width: size.width + 2 * topRadius, height: size.height)
@@ -24,6 +33,9 @@ struct NotchContentView: View {
                 if isOpen {
                     content
                         .transition(.opacity)
+                } else if let peek {
+                    MeetingPeek(vm: vm, peek: peek, hero: hero)
+                        .transition(.opacity)
                 }
             }
             .frame(width: size.width, height: size.height, alignment: .top)
@@ -32,6 +44,7 @@ struct NotchContentView: View {
         .frame(width: size.width + 2 * topRadius, height: size.height, alignment: .top)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(Theme.openAnimation, value: isOpen)
+        .animation(Theme.openAnimation, value: vm.peek)
         .animation(Theme.paneAnimation, value: vm.tab)
     }
 
@@ -89,6 +102,7 @@ struct NotchContentView: View {
                 Text(CalendarPane.countdown(to: next, from: vm.calendar.now))
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(next.isRunning ? Color.white.opacity(0.8) : Theme.tertiary)
+                    .hero(.countdown, in: hero)
             }
         case .translate:
             // Nothing: the columns name both languages already, and the strip
@@ -156,7 +170,7 @@ struct NotchContentView: View {
         case .clipboard:
             ClipboardPane(clipboard: vm.clipboard, privacy: vm.privacy)
         case .calendar:
-            CalendarPane(calendar: vm.calendar, privacy: vm.privacy, recorder: vm.recorder)
+            CalendarPane(calendar: vm.calendar, privacy: vm.privacy, recorder: vm.recorder, hero: hero)
         case .snippets:
             SnippetsPane(snippets: vm.snippets, privacy: vm.privacy, wantsKeyboard: $vm.wantsKeyboard)
         case .translate:

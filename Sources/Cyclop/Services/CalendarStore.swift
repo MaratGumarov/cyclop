@@ -14,7 +14,7 @@ final class CalendarStore: ObservableObject {
         case denied
     }
 
-    struct Meeting: Identifiable {
+    struct Meeting: Identifiable, Equatable {
         let id: String
         let title: String
         let start: Date
@@ -42,11 +42,28 @@ final class CalendarStore: ObservableObject {
 
     @Published private(set) var access: Access = .notRequested
     @Published private(set) var meetings: [Meeting] = []
+    /// Called when a meeting's last minute begins, once per meeting. A plain
+    /// closure rather than one more `@Published`: this is an event, not a
+    /// state, and a published event has to be cleared afterwards by whoever
+    /// consumed it — which `@Published` makes awkward, since it hands
+    /// subscribers the new value before the property holds it.
+    ///
+    /// Only meetings with a link raise it. Without one there is no button, and
+    /// a panel that opens to say "no button" is an interruption with nothing
+    /// behind it.
+    var onAlert: ((Meeting) -> Void)?
     /// Recomputed on a timer so the countdown in the header stays honest.
     @Published private(set) var now = Date()
 
     private let store = EKEventStore()
     private var timer: Timer?
+    /// One shot, aimed at the exact minute mark of the nearest meeting with a
+    /// link — not a poll. The panel spends most of the day collapsed with no
+    /// clock running at all, and a feature that fires twice a day should not
+    /// be the reason one starts.
+    private var alertTimer: Timer?
+    /// Meetings already announced, so a reload does not announce them again.
+    private var announced: Set<String> = []
     private var observer: Any?
     /// Whether the panel is open. The half-minute tick serves eyes only — it
     /// keeps the countdown honest and drops meetings as they end — so it runs
@@ -56,6 +73,9 @@ final class CalendarStore: ObservableObject {
     /// when one wonders what tomorrow looks like. A week is still glanceable
     /// because only the next meeting gets the large treatment.
     private let horizon: TimeInterval = 7 * 24 * 3600
+    /// How long before a meeting the panel comes down. Long enough to open the
+    /// link and let the call load, short enough that nobody has wandered off.
+    private static let alertLead: TimeInterval = 60
 
     var next: Meeting? {
         meetings.first { $0.end > Date() }
@@ -77,6 +97,8 @@ final class CalendarStore: ObservableObject {
 
     func stop() {
         stopTimer()
+        alertTimer?.invalidate()
+        alertTimer = nil
         if let observer { NotificationCenter.default.removeObserver(observer) }
         observer = nil
     }
@@ -202,6 +224,7 @@ final class CalendarStore: ObservableObject {
         guard !calendars.isEmpty else {
             meetings = []
             now = Date()
+            scheduleAlert()
             return
         }
         let start = Date()
@@ -226,6 +249,7 @@ final class CalendarStore: ObservableObject {
                 )
             }
         now = Date()
+        scheduleAlert()
     }
 
     /// Calendars for the status-bar picker (#36), each labelled with the pick
@@ -251,6 +275,41 @@ final class CalendarStore: ObservableObject {
     func setCalendarShown(_ shown: Bool, identifier: String) {
         CalendarVisibility.setShown(shown, for: identifier)
         reload()
+    }
+
+    // MARK: - The minute before
+
+    /// Aims the one-shot timer at the next meeting nobody has been told about
+    /// yet. Called after every reload, and again after each firing, so the
+    /// chain walks the day forward on its own.
+    private func scheduleAlert() {
+        alertTimer?.invalidate()
+        alertTimer = nil
+        let now = Date()
+        guard let meeting = meetings.first(where: {
+            $0.link != nil && $0.start > now && !announced.contains($0.id)
+        }) else { return }
+
+        let fire = meeting.start.addingTimeInterval(-Self.alertLead)
+        // Already inside the last minute — at launch, or after waking. Late is
+        // exactly when the button is worth the most.
+        guard fire > now else { return raise(meeting) }
+
+        let timer = Timer(fire: fire, interval: 0, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.raise(meeting) }
+        }
+        timer.tolerance = 2
+        RunLoop.main.add(timer, forMode: .common)
+        alertTimer = timer
+    }
+
+    private func raise(_ meeting: Meeting) {
+        announced.insert(meeting.id)
+        now = Date()
+        onAlert?(meeting)
+        // Two meetings can start in the same minute; the second is queued at
+        // once, and the set of the announced is what ends the chain.
+        scheduleAlert()
     }
 
     func join(_ meeting: Meeting) {

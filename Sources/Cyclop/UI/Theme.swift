@@ -12,6 +12,7 @@ enum Theme {
 
     static let collapsedTopRadius: CGFloat = 6
     static let collapsedBottomRadius: CGFloat = 9
+    static let peekBottomRadius: CGFloat = 16
     static let openTopRadius: CGFloat = 12
     static let openBottomRadius: CGFloat = 22
 
