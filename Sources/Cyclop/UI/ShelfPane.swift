@@ -15,6 +15,13 @@ struct ShelfPane: View {
     /// So the pane tracks the pointer and every card's frame itself, and
     /// re-decides on either change: the pointer moving, or the cards moving
     /// under it. Scrolling the strip is the same case and heals the same way.
+    /// The card being held down past the click, and the full-size picture
+    /// once it has been read. The id lands first and the image follows, so a
+    /// press on a large file does not wait on the disk before showing
+    /// anything.
+    @State private var peekedID: UUID?
+    @State private var peekImage: NSImage?
+
     @State private var hoveredID: UUID?
     @State private var hoverPoint: CGPoint?
     @State private var frames: [UUID: CGRect] = [:]
@@ -27,7 +34,12 @@ struct ShelfPane: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
                         ForEach(shelf.items) { item in
-                            ShelfCard(item: item, shelf: shelf, isHovered: hoveredID == item.id)
+                            ShelfCard(
+                                item: item,
+                                shelf: shelf,
+                                isHovered: hoveredID == item.id,
+                                onDeepPress: { on in peek(on ? item : nil) }
+                            )
                                 .background(
                                     GeometryReader { geo in
                                         Color.clear.preference(
@@ -61,6 +73,53 @@ struct ShelfPane: View {
             }
         }
         .padding(.top, 2)
+        .overlay { preview }
+    }
+
+    // MARK: - Peek
+
+    /// The card's own picture, filling the pane for as long as the press
+    /// lasts. A shelf card is 68 pt wide, which is enough to tell two
+    /// screenshots apart and not enough to read one.
+    @ViewBuilder private var preview: some View {
+        if let peekedID, let item = shelf.items.first(where: { $0.id == peekedID }) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Theme.surface)
+                Image(nsImage: peekImage ?? item.icon)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+                    .padding(6)
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Theme.hairline, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .transition(.scale(scale: 0.85).combined(with: .opacity))
+            .allowsHitTesting(false)
+        }
+    }
+
+    private func peek(_ item: ShelfItem?) {
+        withAnimation(Theme.contentAnimation) {
+            peekedID = item?.id
+            // The card's thumbnail stands in until the file is read — never a
+            // blank box, and for anything QuickLook drew well enough it is all
+            // that is ever needed.
+            peekImage = nil
+        }
+        guard let item else { return }
+        Task.detached(priority: .userInitiated) {
+            // Off the main actor: decoding a Retina screenshot takes long
+            // enough to be felt as a stutter in the panel's own animation.
+            let full = NSImage(contentsOf: item.url)
+            await MainActor.run {
+                guard peekedID == item.id, let full, full.isValid else { return }
+                peekImage = full
+            }
+        }
     }
 
     /// The one decision both signals feed: which frame holds the last known
@@ -125,6 +184,7 @@ private struct ShelfCard: View {
     /// Handed down from the pane, which is the one place that can know it
     /// correctly when cards move under a stationary pointer.
     let isHovered: Bool
+    let onDeepPress: (Bool) -> Void
 
     private var isSelected: Bool { shelf.isSelected(item) }
 
@@ -164,7 +224,8 @@ private struct ShelfCard: View {
             ShelfDragSource(
                 urls: { shelf.dragURLs(startingAt: item) },
                 onClick: { modifiers in shelf.select(item, modifiers: modifiers) },
-                onDoubleClick: { shelf.open(item) }
+                onDoubleClick: { shelf.open(item) },
+                onDeepPress: onDeepPress
             )
         )
         .overlay(alignment: .topLeading) {

@@ -14,28 +14,57 @@ struct ShelfDragSource: NSViewRepresentable {
     var urls: () -> [URL]
     var onClick: (NSEvent.ModifierFlags) -> Void
     var onDoubleClick: () -> Void
+    /// Raised while the trackpad is pressed past the click, and lowered when
+    /// the finger comes off. Trackpads without pressure never raise it.
+    var onDeepPress: (Bool) -> Void
 
     func makeNSView(context: Context) -> DragView {
         let view = DragView()
-        view.urls = urls
-        view.onClick = onClick
-        view.onDoubleClick = onDoubleClick
+        // Asking for the deep-click behaviour is what makes the trackpad
+        // report stages at all — and it brings the second haptic tick with
+        // it, so the press is felt as well as seen.
+        view.pressureConfiguration = NSPressureConfiguration(pressureBehavior: .primaryDeepClick)
+        view.apply(urls, onClick, onDoubleClick, onDeepPress)
         return view
     }
 
     func updateNSView(_ view: DragView, context: Context) {
-        view.urls = urls
-        view.onClick = onClick
-        view.onDoubleClick = onDoubleClick
+        view.apply(urls, onClick, onDoubleClick, onDeepPress)
     }
 
     final class DragView: NSView, NSDraggingSource {
         var urls: () -> [URL] = { [] }
         var onClick: (NSEvent.ModifierFlags) -> Void = { _ in }
         var onDoubleClick: () -> Void = {}
+        var onDeepPress: (Bool) -> Void = { _ in }
 
         private var mouseDownPoint: NSPoint?
         private var dragging = false
+        private var deep = false
+
+        func apply(
+            _ urls: @escaping () -> [URL],
+            _ onClick: @escaping (NSEvent.ModifierFlags) -> Void,
+            _ onDoubleClick: @escaping () -> Void,
+            _ onDeepPress: @escaping (Bool) -> Void
+        ) {
+            self.urls = urls
+            self.onClick = onClick
+            self.onDoubleClick = onDoubleClick
+            self.onDeepPress = onDeepPress
+        }
+
+        /// Stage 2 is the press past the click — the same one Finder opens
+        /// Quick Look on.
+        override func pressureChange(with event: NSEvent) {
+            setDeep(event.stage >= 2)
+        }
+
+        private func setDeep(_ on: Bool) {
+            guard deep != on else { return }
+            deep = on
+            onDeepPress(on)
+        }
 
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
@@ -55,6 +84,9 @@ struct ShelfDragSource: NSViewRepresentable {
             let files = urls()
             guard !files.isEmpty else { return }
             dragging = true
+            // A press that turns into a drag is a drag: the enlarged preview
+            // must not stay up behind the file being carried away.
+            setDeep(false)
 
             let items = files.enumerated().map { index, url -> NSDraggingItem in
                 let item = NSDraggingItem(pasteboardWriter: url as NSURL)
@@ -71,10 +103,18 @@ struct ShelfDragSource: NSViewRepresentable {
         }
 
         override func mouseUp(with event: NSEvent) {
+            // Where the preview shrinks back. `pressureChange` does report the
+            // release on its own, but not always before the mouse-up, and a
+            // preview still open after the finger is off is the one state this
+            // must never end in.
+            let wasDeep = deep
+            setDeep(false)
             defer {
                 mouseDownPoint = nil
                 dragging = false
             }
+            // The click that opened the preview is spent on opening it.
+            guard !wasDeep else { return }
             guard !dragging else { return }
             if event.clickCount >= 2 {
                 onDoubleClick()
