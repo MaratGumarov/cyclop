@@ -123,12 +123,15 @@ final class MeetingRecorder: ObservableObject {
             // would loop anything it ever did.
             configuration.excludesCurrentProcessAudio = true
             configuration.captureMicrophone = microphone
-            // A stream always captures a picture; this one is asked for the
-            // smallest and slowest picture there is, and nothing ever reads it.
+            // No picture at all: no screen output is attached below, and the
+            // frame this asks for is the smallest and slowest one there is.
+            // A recorder that also holds a live capture of the display makes
+            // the Mac say it is sharing the screen for the length of a call —
+            // which is both untrue and, for a menu bar app, alarming.
             configuration.width = 2
             configuration.height = 2
             configuration.minimumFrameInterval = CMTime(value: 1, timescale: 1)
-            configuration.queueDepth = 6
+            configuration.queueDepth = 3
 
             let url = Self.url(title: title, stamp: stamp)
             let sink = AudioSink(url: url, wantsMicrophone: microphone)
@@ -139,10 +142,6 @@ final class MeetingRecorder: ObservableObject {
             let stream = SCStream(filter: SCContentFilter(display: display, excludingWindows: []),
                                   configuration: configuration,
                                   delegate: sink)
-            // The picture is subscribed to and thrown away. An audio-only
-            // stream is legal, but one with no output attached at all has been
-            // known to stop itself the moment it starts.
-            try stream.addStreamOutput(sink, type: .screen, sampleHandlerQueue: sink.queue)
             try stream.addStreamOutput(sink, type: .audio, sampleHandlerQueue: sink.queue)
             if microphone {
                 try stream.addStreamOutput(sink, type: .microphone, sampleHandlerQueue: sink.queue)
