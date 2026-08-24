@@ -113,3 +113,5 @@
 "No display to capture audio from" = "No display to capture audio from";
 "Could not open the recording file" = "Could not open the recording file";
 "Stop recording · %@" = "Stop recording · %@";
+"Start recording" = "Start recording";
+"Recording" = "Recording";

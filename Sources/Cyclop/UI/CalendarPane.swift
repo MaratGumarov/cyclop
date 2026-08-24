@@ -161,10 +161,13 @@ struct CalendarPane: View {
                 if next.link != nil {
                     joinPill(next)
                         .hero(.join, in: hero)
-                    if !recorder.isRecording {
-                        recordPill(next)
-                            .hero(.record, in: hero)
-                    }
+                }
+                // Independent of the link, because recording is: a call that
+                // started in a chat has no event and no button to join, and it
+                // is exactly as worth keeping as the ones somebody scheduled.
+                if !recorder.isRecording {
+                    recordPill(next)
+                        .hero(.record, in: hero)
                 }
                 // Shown whatever is on screen, and it is the same pill the
                 // peek shows: a recording started for one meeting outlives it,
@@ -197,9 +200,13 @@ struct CalendarPane: View {
         }
     }
 
-    /// Joins and starts recording in one press. The link is opened first: the
-    /// call is what one is late for, and the two permissions the recording
-    /// needs can take a moment to answer.
+    /// Joins and starts recording in one press, where there is something to
+    /// join. The link is opened first: the call is what one is late for, and
+    /// the two permissions the recording needs can take a moment to answer.
+    ///
+    /// With no link it is only the second half — the meeting still names the
+    /// file, which is what the agenda is good for even when the call itself
+    /// happens somewhere Cyclop cannot see.
     private func recordPill(_ meeting: CalendarStore.Meeting) -> some View {
         MeetingPill(
             symbol: "record.circle",
@@ -207,10 +214,22 @@ struct CalendarPane: View {
             style: .quiet,
             symbolTint: Color.red.opacity(0.9)
         ) {
-            calendar.join(meeting)
+            if meeting.link != nil { calendar.join(meeting) }
             recorder.start(for: meeting)
         }
-        .help(localized("Join and record the meeting"))
+        .help(localized(meeting.link != nil ? "Join and record the meeting" : "Record"))
+    }
+
+    /// The one button that does not need an agenda behind it.
+    private var loneRecordPill: some View {
+        MeetingPill(
+            symbol: "record.circle",
+            title: Text(localized("Record")),
+            style: .quiet,
+            symbolTint: Color.red.opacity(0.9)
+        ) {
+            recorder.start(title: localized("Recording"))
+        }
     }
 
     /// Everything after the next meeting, as a column on the right. A meeting
@@ -384,6 +403,25 @@ struct CalendarPane: View {
             Text("Nothing on the calendar for the next day")
                 .font(.system(size: 10))
                 .foregroundStyle(Theme.tertiary)
+            // An empty agenda is not an empty day: the calls that were never
+            // scheduled are the ones this tab would otherwise have nothing to
+            // say about.
+            if recorder.isRecording {
+                StopRecordingPill(recorder: recorder)
+                    .padding(.top, 4)
+            } else {
+                loneRecordPill
+                    .padding(.top, 4)
+            }
+            if let failure = recorder.failure {
+                Text(failure)
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(Color.red.opacity(0.85))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 40)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

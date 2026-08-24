@@ -112,3 +112,5 @@
 "No display to capture audio from" = "Нет дисплея, с которого брать звук";
 "Could not open the recording file" = "Не удалось открыть файл записи";
 "Stop recording · %@" = "Остановить запись · %@";
+"Start recording" = "Начать запись";
+"Recording" = "Запись";

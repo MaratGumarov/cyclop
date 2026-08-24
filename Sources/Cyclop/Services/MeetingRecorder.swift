@@ -72,12 +72,24 @@ final class MeetingRecorder: ObservableObject {
     // MARK: - Start
 
     func start(for meeting: CalendarStore.Meeting) {
-        guard session == nil, !starting else { return }
-        starting = true
-        Task { await begin(meeting) }
+        start(title: meeting.title, stamp: meeting.start, endingAt: meeting.end)
     }
 
-    private func begin(_ meeting: CalendarStore.Meeting) async {
+    /// Records something that is not in the calendar at all — a call that
+    /// started in a chat, a conversation nobody scheduled. The same recording
+    /// in every other respect: what is being written does not depend on
+    /// whether an event exists for it, and the half of the calls one actually
+    /// wants kept are the ones nobody sent an invitation for.
+    ///
+    /// `end` is only the moment to come and ask, so an unscheduled recording
+    /// simply has nobody to ask on its behalf — it runs until it is stopped.
+    func start(title: String, stamp: Date = Date(), endingAt end: Date? = nil) {
+        guard session == nil, !starting else { return }
+        starting = true
+        Task { await begin(title: title, stamp: stamp, endingAt: end) }
+    }
+
+    private func begin(title: String, stamp: Date, endingAt end: Date?) async {
         defer { starting = false }
         failure = nil
 
@@ -118,7 +130,7 @@ final class MeetingRecorder: ObservableObject {
             configuration.minimumFrameInterval = CMTime(value: 1, timescale: 1)
             configuration.queueDepth = 6
 
-            let url = Self.url(for: meeting)
+            let url = Self.url(title: title, stamp: stamp)
             let sink = AudioSink(url: url, wantsMicrophone: microphone)
             sink.onFailure = { [weak self] message in
                 Task { @MainActor in self?.streamDied(message) }
@@ -139,9 +151,9 @@ final class MeetingRecorder: ObservableObject {
 
             self.stream = stream
             self.sink = sink
-            session = Session(title: meeting.title, started: Date())
+            session = Session(title: title, started: Date())
             overran = false
-            watchForEnd(meeting.end)
+            if let end { watchForEnd(end) }
         } catch {
             failure = error.localizedDescription
             stream = nil
@@ -223,12 +235,12 @@ final class MeetingRecorder: ObservableObject {
     /// Uniqued the same way screenshots are, and for a sharper reason: the same
     /// meeting recorded twice — a call rejoined after it dropped — would land
     /// on the same name, and the writer opens it by deleting what is there.
-    private static func url(for meeting: CalendarStore.Meeting) -> URL {
-        let title = meeting.title
+    private static func url(title: String, stamp when: Date) -> URL {
+        let title = title
             .components(separatedBy: CharacterSet(charactersIn: "/:\\"))
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let base = "\(stamp.string(from: meeting.start)) \(title.isEmpty ? localized("Meeting") : title)"
+        let base = "\(stamp.string(from: when)) \(title.isEmpty ? localized("Meeting") : title)"
         var url = folder.appendingPathComponent("\(base).m4a")
         var attempt = 2
         while FileManager.default.fileExists(atPath: url.path) {

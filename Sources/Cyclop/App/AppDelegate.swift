@@ -8,7 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var privacyItem: NSMenuItem?
     private var privacyAllItem: NSMenuItem?
     private var privacySectionItems: [PrivacyMode.Section: NSMenuItem] = [:]
-    private var stopRecordingItem: NSMenuItem?
+    private var recordItem: NSMenuItem?
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -62,17 +62,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         toggle.target = self
         menu.addItem(toggle)
 
-        // Hidden unless something is being recorded, and above the panel switch
-        // when it is: it is what somebody opens this menu in a hurry for.
-        let stop = NSMenuItem(
-            title: localized("Stop recording"),
-            action: #selector(stopRecording),
+        // Above the panel switch, because both halves of it are things people
+        // reach for in a hurry: a call that started in a chat and is worth
+        // keeping, and a recording that has to stop now. Neither should need
+        // the panel opened first, and the second must never be hunted for.
+        let record = NSMenuItem(
+            title: localized("Start recording"),
+            action: #selector(toggleRecording),
             keyEquivalent: ""
         )
-        stop.target = self
-        stop.isHidden = true
-        menu.insertItem(stop, at: 2)
-        stopRecordingItem = stop
+        record.target = self
+        menu.insertItem(record, at: 2)
+        recordItem = record
 
         // Sits next to the panel switch rather than in the Settings tab: it
         // changes what the panel shows, and it is the one people look for in a
@@ -124,8 +125,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         controller?.toggle()
     }
 
-    @objc private func stopRecording() {
-        controller?.recorder.stop()
+    @objc private func toggleRecording() {
+        guard let recorder = controller?.recorder else { return }
+        if recorder.isRecording {
+            recorder.stop()
+        } else {
+            recorder.start(title: localized("Recording"))
+        }
     }
 
     private func refreshStatusIcon(recording: Bool) {
@@ -142,10 +148,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// between: a menu nobody is looking at deserves no bookkeeping.
     func menuWillOpen(_ menu: NSMenu) {
         refreshPrivacyItems()
-        let recorder = controller?.recorder
-        stopRecordingItem?.isHidden = !(recorder?.isRecording ?? false)
-        if let recorder, recorder.isRecording {
-            stopRecordingItem?.title = localized("Stop recording (%@)", formatTime(recorder.elapsed))
+        if let recorder = controller?.recorder {
+            recordItem?.title = recorder.isRecording
+                ? localized("Stop recording (%@)", formatTime(recorder.elapsed))
+                : localized("Start recording")
         }
     }
 
