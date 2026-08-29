@@ -92,6 +92,12 @@ IDENTITY="${CYCLOP_SIGN_IDENTITY:-}"
 if [ -z "$IDENTITY" ] && security find-identity -v -p codesigning 2>/dev/null | grep -q "Cyclop Dev"; then
     IDENTITY="Cyclop Dev"
 fi
+# Сертификат разработчика от Apple годится ровно так же — постоянная личность
+# есть и у него. У того, кто уже завёл его для Xcode, заводить второй незачем.
+if [ -z "$IDENTITY" ]; then
+    IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
+        | sed -n 's/.*"\(Apple Develop.*\)"/\1/p' | head -1)"
+fi
 
 if [ -n "$IDENTITY" ]; then
     echo "==> signing as $IDENTITY"
