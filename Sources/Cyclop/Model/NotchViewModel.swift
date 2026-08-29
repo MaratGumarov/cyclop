@@ -312,6 +312,25 @@ final class NotchViewModel: ObservableObject {
         tab = .shelf
     }
 
+    /// Start or stop from the panel's header, which stands on every tab.
+    ///
+    /// Recording a call is not a calendar feature: the half of the calls one
+    /// actually has begin in a chat window, and reaching them should not mean
+    /// first switching to an agenda that has nothing to say about them.
+    ///
+    /// The agenda is still asked for a name when a meeting is under way —
+    /// a file called by the meeting is worth more than one called "Recording",
+    /// and which tab was open at the time is no reason to lose it.
+    func toggleRecording() {
+        if recorder.isRecording {
+            recorder.stop()
+        } else if let next = calendar.next, next.isRunning {
+            recorder.start(for: next)
+        } else {
+            recorder.start(title: localized("Recording"))
+        }
+    }
+
     /// A file the user dropped on the panel by hand — switching to the shelf
     /// is the point, not a side effect to guard against.
     func accept(urls: [URL]) -> Bool {

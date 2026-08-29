@@ -87,7 +87,7 @@ struct NotchContentView: View {
             // Ahead of whatever the tab has to say, and on every tab: which tab
             // one happens to be looking at is no reason to not know that a
             // microphone is open.
-            RecordingBadge(recorder: vm.recorder)
+            RecordingButton(recorder: vm.recorder) { vm.toggleRecording() }
             tabTrailing
         }
     }
@@ -232,21 +232,44 @@ private struct RecordingMark: View {
     }
 }
 
-/// The counter in the panel's header, shown on whichever tab is open.
-private struct RecordingBadge: View {
+/// The recorder's place in the panel's header, on whichever tab is open: the
+/// counter while a recording runs, and the way to start one while none does.
+///
+/// Recording lives here rather than only under the agenda because the calls
+/// worth keeping are not only the ones somebody sent an invitation for. The
+/// header is the one strip that every tab has, so it is the one place where
+/// "record this" costs no navigation.
+///
+/// Small, grey and off to the side on purpose: a mistaken press is a file of a
+/// conversation nobody agreed to record, so this is a mark to be aimed at, not
+/// one to be landed on while reaching for a tab.
+private struct RecordingButton: View {
     @ObservedObject var recorder: MeetingRecorder
+    let toggle: () -> Void
 
     var body: some View {
-        if let session = recorder.session {
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(Color.red)
-                    .frame(width: 5, height: 5)
-                Text(timerInterval: session.started...Date.distantFuture, countsDown: false)
-                    .font(.system(size: 10, weight: .medium).monospacedDigit())
-                    .foregroundStyle(Color.white.opacity(0.8))
+        Button(action: toggle) {
+            if let session = recorder.session {
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(Color.red)
+                        .frame(width: 5, height: 5)
+                    Text(timerInterval: session.started...Date.distantFuture, countsDown: false)
+                        .font(.system(size: 10, weight: .medium).monospacedDigit())
+                        .foregroundStyle(Color.white.opacity(0.8))
+                }
+            } else {
+                // Red only when there is something to say: a refused
+                // permission otherwise shows its words on the Calendar tab
+                // alone, and pressing here from the Shelf would look like
+                // nothing happened at all.
+                Image(systemName: "record.circle")
+                    .font(.system(size: 11))
+                    .foregroundStyle(recorder.failure == nil ? Theme.tertiary : Color.red.opacity(0.85))
             }
         }
+        .buttonStyle(.plain)
+        .help(recorder.failure ?? localized(recorder.isRecording ? "Stop recording" : "Start recording"))
     }
 }
 
