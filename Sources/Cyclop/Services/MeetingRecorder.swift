@@ -41,6 +41,11 @@ final class MeetingRecorder: ObservableObject {
     /// The finished file, once it is written and mixed down. A recording that
     /// lands in a folder nobody opens is a recording nobody has.
     var onFinished: ((URL) -> Void)?
+    /// The file the last recording left behind, kept for as long as the app
+    /// runs. The shelf takes the card the moment it is written, but the
+    /// question "where did that one go" is asked a minute later just as often
+    /// — and the button that was pressed to start it is where one looks.
+    @Published private(set) var lastFile: URL?
 
     private var stream: SCStream?
     private var sink: AudioSink?
@@ -68,8 +73,10 @@ final class MeetingRecorder: ObservableObject {
     /// own file until someone drags it out.
     static var folder: URL { Support.directory("Recordings") }
 
-    static func reveal() {
-        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: folder.path)
+    /// Opens the folder, with `file` picked out in it when there is one to
+    /// pick out — the last recording is what the folder is being opened for.
+    static func reveal(_ file: URL? = nil) {
+        NSWorkspace.shared.selectFile(file?.path, inFileViewerRootedAtPath: folder.path)
     }
 
     // MARK: - Start
@@ -195,7 +202,10 @@ final class MeetingRecorder: ObservableObject {
             try? await stream?.stopCapture()
             await sink?.finish(mix: mix)
             if let url = sink?.finalURL, FileManager.default.fileExists(atPath: url.path) {
-                await MainActor.run { self?.onFinished?(url) }
+                await MainActor.run {
+                    self?.lastFile = url
+                    self?.onFinished?(url)
+                }
             }
             completion?()
         }

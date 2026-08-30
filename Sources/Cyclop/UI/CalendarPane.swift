@@ -176,6 +176,8 @@ struct CalendarPane: View {
                 if recorder.isRecording {
                     StopRecordingPill(recorder: recorder)
                         .hero(.stop, in: hero)
+                } else if recorder.lastFile != nil {
+                    recordingsPill
                 }
             }
             if let failure = recorder.failure {
@@ -218,6 +220,23 @@ struct CalendarPane: View {
             recorder.start(for: meeting)
         }
         .help(localized(meeting.link != nil ? "Join and record the meeting" : "Record"))
+    }
+
+    /// Where the recording that just stopped went.
+    ///
+    /// It takes the place the Stop button leaves, because that is the spot
+    /// being looked at the moment it becomes a question — and it says the
+    /// answer in the only way that ends the question, by opening the folder
+    /// with the file picked out rather than naming a path.
+    private var recordingsPill: some View {
+        MeetingPill(
+            symbol: "folder",
+            title: Text(localized("Recordings")),
+            style: .quiet
+        ) {
+            MeetingRecorder.reveal(recorder.lastFile)
+        }
+        .help(localized("Show Recordings Folder"))
     }
 
     /// The one button that does not need an agenda behind it.
@@ -410,8 +429,13 @@ struct CalendarPane: View {
                 StopRecordingPill(recorder: recorder)
                     .padding(.top, 4)
             } else {
-                loneRecordPill
-                    .padding(.top, 4)
+                HStack(spacing: 7) {
+                    loneRecordPill
+                    if recorder.lastFile != nil {
+                        recordingsPill
+                    }
+                }
+                .padding(.top, 4)
             }
             if let failure = recorder.failure {
                 Text(failure)
