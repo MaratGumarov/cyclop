@@ -41,8 +41,15 @@ struct NotchContentView: View {
             .frame(width: size.width, height: size.height, alignment: .top)
             .clipped()
         }
-        .overlay(alignment: .bottom) {
-            RecordingMark(recorder: vm.recorder, visible: !isOpen && peek == nil)
+        .overlay(alignment: .top) {
+            // Placed off the notch's own width rather than the body's: the
+            // panel is 620 pt wide once it opens, and a mark that followed
+            // that would fly off to the far end of the menu bar on the way.
+            RecordingMark(recorder: vm.recorder, visible: !isOpen)
+                .offset(
+                    x: vm.geometry.notchSize.width / 2 + Theme.collapsedTopRadius + 6,
+                    y: (vm.geometry.notchSize.height - RecordingMark.dot) / 2
+                )
         }
         .frame(width: size.width + 2 * topRadius, height: size.height, alignment: .top)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -198,30 +205,34 @@ struct NotchContentView: View {
     }
 }
 
-/// The red mark under the collapsed notch, and the only thing on screen while
+/// The red dot beside the collapsed notch, and the only thing on screen while
 /// the panel is folded away that says a recording is running.
 ///
 /// It watches the recorder itself rather than reading through the view model,
 /// which forwards its children only while somebody is looking at the panel —
 /// and the whole point of this mark is the hour when nobody is.
 ///
-/// A bar along the bottom edge rather than a dot in the middle of the notch: a
-/// red dot next to the camera says the camera is on, which is the one thing
-/// this recording is not.
+/// Beside the notch rather than under it or inside it. Under it, the mark was
+/// gone the moment a peek dropped down and took that edge; inside it, a red
+/// dot sits next to the camera and says the camera is on — which is the one
+/// thing this recording is not. To the right it keeps the company it belongs
+/// in: the menu bar, where every other "this is running" lives.
 private struct RecordingMark: View {
+    /// Its own diameter, since the offset that places it has to centre it
+    /// against the height of the notch.
+    static let dot: CGFloat = 6
+
     @ObservedObject var recorder: MeetingRecorder
-    /// The panel and the peek both say it louder; this is for the state where
-    /// nothing else does.
+    /// The open panel says it louder, with a counter in the header.
     let visible: Bool
 
     @State private var dim = false
 
     var body: some View {
         if visible, recorder.isRecording {
-            Capsule()
+            Circle()
                 .fill(Color.red)
-                .frame(width: 46, height: 3)
-                .padding(.bottom, 3)
+                .frame(width: Self.dot, height: Self.dot)
                 .opacity(dim ? 0.35 : 1)
                 .animation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true), value: dim)
                 .onAppear { dim = true }
