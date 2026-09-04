@@ -9,6 +9,9 @@ import SwiftUI
 /// starts. It also owns the click handling, because selection and dragging
 /// come from the same mouse-down.
 struct ShelfDragSource: NSViewRepresentable {
+    /// The one card this handle covers, as opposed to what a drag from it
+    /// would carry. Registered so Quick Look can zoom out of the card.
+    var url: URL
     /// Files to drag: the whole selection if this card is part of it, else
     /// just this card.
     var urls: () -> [URL]
@@ -25,11 +28,13 @@ struct ShelfDragSource: NSViewRepresentable {
         // it, so the press is felt as well as seen.
         view.pressureConfiguration = NSPressureConfiguration(pressureBehavior: .primaryDeepClick)
         view.apply(urls, onClick, onDoubleClick, onDeepPress)
+        ShelfCardFrames.register(view, for: url)
         return view
     }
 
     func updateNSView(_ view: DragView, context: Context) {
         view.apply(urls, onClick, onDoubleClick, onDeepPress)
+        ShelfCardFrames.register(view, for: url)
     }
 
     final class DragView: NSView, NSDraggingSource {
@@ -129,5 +134,30 @@ struct ShelfDragSource: NSViewRepresentable {
         ) -> NSDragOperation {
             context == .outsideApplication ? [.copy, .move, .link, .generic] : []
         }
+    }
+}
+
+/// Where each shelf card sits on screen, which is what Quick Look zooms out
+/// of and back into.
+///
+/// A view is the one thing that knows its own screen frame without a chain of
+/// coordinate-space conversions, and the shelf already covers every card with
+/// one — so the drag handles double as the register. The table holds them
+/// weakly: a card that leaves the shelf drops out of it without being told.
+enum ShelfCardFrames {
+    private static let views = NSMapTable<NSURL, NSView>.strongToWeakObjects()
+
+    static func register(_ view: NSView, for url: URL) {
+        views.setObject(view, forKey: url as NSURL)
+    }
+
+    /// `.zero` for a card that is not on screen — off the shelf, or on a
+    /// panel that has folded away since. Quick Look reads that as "nowhere to
+    /// zoom from" and fades instead, which is the right picture for a file
+    /// whose card is not visible.
+    static func screenFrame(for url: URL) -> NSRect {
+        guard let view = views.object(forKey: url as NSURL),
+              let window = view.window, window.isVisible, view.superview != nil else { return .zero }
+        return window.convertToScreen(view.convert(view.bounds, to: nil))
     }
 }

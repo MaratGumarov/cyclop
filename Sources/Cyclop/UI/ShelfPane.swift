@@ -31,6 +31,7 @@ struct ShelfPane: View {
             if shelf.items.isEmpty {
                 dropHint
             } else {
+                ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
                         ForEach(shelf.items) { item in
@@ -67,6 +68,15 @@ struct ShelfPane: View {
                 .onPreferenceChange(CardFramesKey.self) { new in
                     frames = new
                     rehit()
+                }
+                // Quick Look moves the selection as the arrow keys walk the
+                // shelf, and a marked card scrolled off the strip marks
+                // nothing. Only for a selection of one: a group is not
+                // somewhere to scroll to.
+                .onChange(of: shelf.selection) { _, new in
+                    guard new.count == 1, let id = new.first else { return }
+                    withAnimation(Theme.contentAnimation) { proxy.scrollTo(id, anchor: .center) }
+                }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 footer
@@ -222,6 +232,7 @@ private struct ShelfCard: View {
         // button, otherwise it swallows every click aimed at it.
         .overlay(
             ShelfDragSource(
+                url: item.url,
                 urls: { shelf.dragURLs(startingAt: item) },
                 onClick: { modifiers in shelf.select(item, modifiers: modifiers) },
                 onDoubleClick: { shelf.open(item) },
@@ -250,6 +261,14 @@ private struct ShelfCard: View {
         }
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .contextMenu {
+            // The keyboard route needs a click first, to make the panel key.
+            // This one works on a card nobody has touched.
+            Button("Quick Look") {
+                let preview = shelf.previewURLs(startingAt: item)
+                QuickLook.shared.show(preview.urls, startingAt: preview.start) { url in
+                    shelf.select(url: url)
+                }
+            }
             Button("Copy") { shelf.copy(item) }
             Button("Open") { shelf.open(item) }
             Button("Show in Finder") { shelf.reveal(item) }

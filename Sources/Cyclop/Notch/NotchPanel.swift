@@ -1,4 +1,5 @@
 import AppKit
+import QuickLookUI
 
 /// Borderless, non-activating panel that lives above the menu bar on every space.
 final class NotchPanel: NSPanel {
@@ -39,6 +40,7 @@ final class NotchPanel: NSPanel {
         static let x: UInt16 = 7
         static let c: UInt16 = 8
         static let v: UInt16 = 9
+        static let space: UInt16 = 49
     }
 
     /// ⌘A, ⌘X, ⌘C, ⌘V and ⌘Z are ordinarily key equivalents of the Edit menu,
@@ -58,8 +60,16 @@ final class NotchPanel: NSPanel {
     /// be noticed is here, where every event the window receives passes.
     var onPress: (() -> Void)?
 
+    /// Raised on Space, and answered `true` by whoever consumed it. The shelf
+    /// does, to open Quick Look; every tab with a field in it does not, or the
+    /// key would stop putting spaces between words.
+    var onSpace: (() -> Bool)?
+
     override func sendEvent(_ event: NSEvent) {
         if event.type == .keyDown, editingAction(for: event) != nil, perform(event) { return }
+        if event.type == .keyDown, event.keyCode == Key.space,
+           event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty,
+           onSpace?() == true { return }
         // Before `super`, so the window is already key by the time the click
         // reaches the field and places a caret.
         if event.type == .leftMouseDown { onPress?() }
@@ -121,5 +131,21 @@ final class NotchPanel: NSPanel {
         acceptsMouseMovedEvents = true
         isReleasedWhenClosed = false
         animationBehavior = .none
+    }
+
+    // MARK: - Quick Look
+
+    /// The preview panel looks for its controller by walking the responder
+    /// chain of the key window, and the window itself is the last link in it —
+    /// which is the one link that exists whatever SwiftUI has made first
+    /// responder underneath.
+    override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool { true }
+
+    override func beginPreviewPanelControl(_ panel: QLPreviewPanel!) {
+        panel.dataSource = QuickLook.shared
+    }
+
+    override func endPreviewPanelControl(_ panel: QLPreviewPanel!) {
+        panel.dataSource = nil
     }
 }

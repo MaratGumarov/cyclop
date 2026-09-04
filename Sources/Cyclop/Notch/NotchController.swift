@@ -151,8 +151,19 @@ final class NotchController {
         // Clicking away drops the keyboard but leaves the tab where it was, so
         // a click back into the panel has to be able to ask for it again.
         panel.onPress = { [weak self] in
-            guard let vm = self?.viewModel, vm.tab.needsKeyboard else { return }
+            guard let vm = self?.viewModel, vm.tab.takesKeyboardOnClick else { return }
             vm.wantsKeyboard = true
+        }
+
+        // Space is Quick Look on the shelf and a space everywhere else, so the
+        // tab decides rather than the panel.
+        panel.onSpace = { [weak self] in
+            guard let vm = self?.viewModel, vm.tab == .shelf else { return false }
+            let preview = vm.shelf.previewURLs(startingAt: nil)
+            QuickLook.shared.show(preview.urls, startingAt: preview.start) { [weak vm] url in
+                vm?.shelf.select(url: url)
+            }
+            return true
         }
 
         panel.contentView = root

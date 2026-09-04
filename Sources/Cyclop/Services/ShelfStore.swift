@@ -159,6 +159,14 @@ final class ShelfStore: ObservableObject {
         }
     }
 
+    /// Moves the selection onto one file, named the only way Quick Look can
+    /// name it. Whatever was being looked at when the preview closes is what
+    /// stays marked, which is the answer to "where was I".
+    func select(url: URL) {
+        guard let item = items.first(where: { $0.url == url }) else { return }
+        selection = [item.id]
+    }
+
     func isSelected(_ item: ShelfItem) -> Bool { selection.contains(item.id) }
 
     func clearSelection() { selection.removeAll() }
@@ -168,6 +176,23 @@ final class ShelfStore: ObservableObject {
     func dragURLs(startingAt item: ShelfItem) -> [URL] {
         guard selection.contains(item.id) else { return [item.url] }
         return items.filter { selection.contains($0.id) }.map(\.url)
+    }
+
+    /// Files Quick Look shows, and which of them to open on.
+    ///
+    /// Several selected cards keep the arrow keys inside themselves — that is
+    /// what picking several was for. Anything else hands over the whole shelf:
+    /// one card says where the preview starts, not what it is limited to, and
+    /// a preview with nowhere to arrow to is the shelf pretending to be a
+    /// single file. Finder splits it the same way.
+    func previewURLs(startingAt item: ShelfItem?) -> (urls: [URL], start: Int) {
+        guard let anchor = item ?? items.first(where: { selection.contains($0.id) }) else {
+            return ([], 0)
+        }
+        let group = selection.count > 1 && selection.contains(anchor.id)
+            ? items.filter { selection.contains($0.id) }
+            : items
+        return (group.map(\.url), group.firstIndex { $0.id == anchor.id } ?? 0)
     }
 
     func reveal(_ item: ShelfItem) {
