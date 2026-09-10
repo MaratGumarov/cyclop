@@ -16,6 +16,10 @@ struct TranslatePane: View {
     @State private var configuration: TranslationSession.Configuration?
     /// Measured once, off the layout path. See `body`.
     @State private var paneSize: CGSize = .zero
+    /// Which side the language list is standing in for, while it is open.
+    @State private var picking: Side?
+
+    private enum Side { case source, target }
 
     /// Largest first. Four rungs, far enough apart that a change is always a
     /// deliberate-looking drop rather than a wobble.
@@ -41,6 +45,9 @@ struct TranslatePane: View {
             }
         )
         .padding(.top, 2)
+        .overlay {
+            if let side = picking { picker(side) }
+        }
         // One task for both the text and the retry counter: a keystroke
         // cancels the pending sleep, so only a pause actually translates.
         .task(id: translator.request) { await schedule() }
@@ -54,7 +61,9 @@ struct TranslatePane: View {
     // MARK: - Left
 
     private func source(_ font: CGFloat) -> some View {
-        column(Translator.name(translator.route.source)) {
+        column {
+            languageButton(translator.route.source, side: .source)
+            Spacer(minLength: 4)
             if !translator.input.isEmpty {
                 Button { translator.reset() } label: {
                     Image(systemName: "xmark")
@@ -86,8 +95,15 @@ struct TranslatePane: View {
                 .padding(.leading, -5)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .contentShape(Rectangle())
+                // The list covers the pane but not the keyboard: the field
+                // still holds focus underneath, so Escape arrives here either
+                // way and has to close whichever of the two is open.
                 .onKeyPress(.escape) {
-                    translator.reset()
+                    if picking != nil {
+                        withAnimation(Theme.contentAnimation) { picking = nil }
+                    } else {
+                        translator.reset()
+                    }
                     return .handled
                 }
         }
@@ -101,7 +117,20 @@ struct TranslatePane: View {
     // MARK: - Right
 
     private func result(_ font: CGFloat) -> some View {
-        column(Translator.name(translator.route.target)) {
+        column {
+            // The arrows lead the right column, which puts them within a few
+            // points of the middle of the pane — between the two languages,
+            // where every translator has always put them.
+            Button { withAnimation(Theme.contentAnimation) { translator.swap() } } label: {
+                Image(systemName: "arrow.left.arrow.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Theme.secondary)
+            }
+            .buttonStyle(.plain)
+            .help(localized("Swap languages"))
+
+            languageButton(translator.route.target, side: .target)
+            Spacer(minLength: 4)
             if !translator.output.isEmpty {
                 CopyButton { translator.copyOutput() }
             }
@@ -183,25 +212,106 @@ struct TranslatePane: View {
 
     // MARK: - Shared
 
-    private func column<Accessory: View, Content: View>(
-        _ title: String,
-        @ViewBuilder accessory: () -> Accessory,
+    private func column<Header: View, Content: View>(
+        @ViewBuilder header: () -> Header,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Text(title.uppercased())
-                    .font(.system(size: 9, weight: .semibold))
-                    .tracking(0.8)
-                    .foregroundStyle(Theme.tertiary)
-                Spacer(minLength: 4)
-                accessory()
+                header()
             }
             .frame(height: 14)
 
             content()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    // MARK: - Languages
+
+    /// The heading doubles as the control: the name of the language is the
+    /// obvious thing to click when one wants a different language, and a pane
+    /// this small has nowhere to put a button that only says "change this".
+    private func languageButton(_ language: Locale.Language, side: Side) -> some View {
+        Button {
+            withAnimation(Theme.contentAnimation) {
+                picking = picking == side ? nil : side
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Text(Translator.name(language).uppercased())
+                    .font(.system(size: 9, weight: .semibold))
+                    .tracking(0.8)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 6, weight: .bold))
+            }
+            .foregroundStyle(picking == side ? .white : Theme.tertiary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// The list fills the pane rather than dropping out of the heading as a
+    /// menu would. The panel folds away the moment the pointer leaves it, and a
+    /// menu of twenty languages hangs well below its edge — reaching for an
+    /// entry would pull the panel out from under the list.
+    private func picker(_ side: Side) -> some View {
+        let current = side == .source ? translator.route.source : translator.route.target
+        return VStack(alignment: .leading, spacing: 8) {
+            // Built rather than written as a literal, so it has to be looked
+            // up by hand — `Text` only localises what it is handed verbatim.
+            Text(localized(side == .source ? "Translate from" : "Translate into"))
+                .font(.system(size: 9, weight: .semibold))
+                .tracking(0.8)
+                .foregroundStyle(Theme.tertiary)
+
+            ScrollView(showsIndicators: false) {
+                LazyVGrid(
+                    // Four across: the twenty-one languages macOS translates
+                    // then stand six rows deep, which is about as much as the
+                    // pane holds — three columns would put a third of the list
+                    // below the fold.
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 4),
+                    alignment: .leading,
+                    spacing: 2
+                ) {
+                    ForEach(translator.languages, id: \.minimalIdentifier) { language in
+                        languageCell(language, side: side, current: current)
+                    }
+                }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.black)
+        )
+        .transition(.opacity)
+    }
+
+    private func languageCell(_ language: Locale.Language, side: Side, current: Locale.Language) -> some View {
+        let selected = language.minimalIdentifier == current.minimalIdentifier
+        return Button {
+            withAnimation(Theme.contentAnimation) { picking = nil }
+            switch side {
+            case .source: translator.choose(source: language)
+            case .target: translator.choose(target: language)
+            }
+        } label: {
+            Text(Translator.title(language))
+                .font(.system(size: 10, weight: selected ? .semibold : .regular))
+                .foregroundStyle(selected ? .white : Theme.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 2)
+                .padding(.horizontal, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(selected ? Theme.surface : .clear)
+                )
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Scheduling
@@ -218,7 +328,7 @@ struct TranslatePane: View {
         try? await Task.sleep(for: .milliseconds(320))
         guard !Task.isCancelled else { return }
 
-        let route = Translator.route(for: text)
+        let route = translator.route
         if var current = configuration, current.source == route.source, current.target == route.target {
             // Same pair, different text. The modifier only re-runs when the
             // configuration changes, and invalidating is how one says "again".
