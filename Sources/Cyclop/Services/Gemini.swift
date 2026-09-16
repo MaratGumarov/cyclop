@@ -94,10 +94,10 @@ enum Gemini {
     private struct Payload: Encodable {
         struct Content: Encodable { let parts: [Part] }
         struct Part: Encodable { let text: String }
-        /// Thinking off. It is on by default in the 2.5 models and adds a
-        /// second or more to every answer — worth it for reasoning, not for a
-        /// sentence going from one language to another.
-        struct Thinking: Encodable { let thinkingBudget = 0 }
+        /// Thinking as low as it goes. Worth a second for reasoning, not for a
+        /// sentence going from one language to another. Gemini 3 takes a level
+        /// and rejects the 2.5-era `thinkingBudget: 0` with a 400.
+        struct Thinking: Encodable { let thinkingLevel = "minimal" }
         struct Config: Encodable {
             let temperature = 0.2
             let thinkingConfig = Thinking()

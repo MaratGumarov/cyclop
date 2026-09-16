@@ -28,7 +28,7 @@ BODY=$(cat <<JSON
 {
   "systemInstruction": { "parts": [ { "text": "You are the translation engine of a small utility panel. The user's message is written in Russian. Translate it into English. Reply with the translation and nothing else." } ] },
   "contents": [ { "parts": [ { "text": "привет" } ] } ],
-  "generationConfig": { "temperature": 0.2, "thinkingConfig": { "thinkingBudget": 0 } }
+  "generationConfig": { "temperature": 0.2, "thinkingConfig": { "thinkingLevel": "minimal" } }
 }
 JSON
 )
