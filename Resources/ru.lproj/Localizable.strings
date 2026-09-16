@@ -28,6 +28,7 @@
 "Selected: %d" = "Выбрано: %d";
 "Deselect" = "Снять выбор";
 "Clear" = "Очистить";
+"Quick Look" = "Быстрый просмотр";
 "Copy" = "Копировать";
 "Open" = "Открыть";
 "Show in Finder" = "Показать в Finder";
@@ -52,6 +53,9 @@
 
 /* Перевод */
 "Translation Languages…" = "Языки перевода…";
+"Swap languages" = "Поменять языки местами";
+"Translate from" = "Переводить с";
+"Translate into" = "Переводить на";
 "Retry" = "Повторить";
 "The %@ → %@ language pack is not installed." = "Не скачан языковой пакет %@ → %@.";
 "macOS does not translate this pair of languages." = "macOS не переводит эту пару языков.";

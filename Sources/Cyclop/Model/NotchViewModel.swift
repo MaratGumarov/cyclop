@@ -39,6 +39,13 @@ final class NotchViewModel: ObservableObject {
         /// that arriving and typing is a single move.
         var needsKeyboard: Bool { self == .translate || self == .snippets || self == .notes }
 
+        /// Tabs a click hands the keyboard to. The shelf has no field, so
+        /// merely hovering onto it must not dim the caret of the window
+        /// underneath — but Space opens Quick Look on the selected cards, and
+        /// a key press needs a key panel. A click is what selects a card in
+        /// the first place, so the keyboard arrives exactly when it is useful.
+        var takesKeyboardOnClick: Bool { needsKeyboard || self == .shelf }
+
         /// Which rail the icon sits on. The left one carries the original six
         /// and is full — icon height is a ceiling now, not a constant (#26,
         /// #27), so a seventh icon would not overflow the panel, but it would

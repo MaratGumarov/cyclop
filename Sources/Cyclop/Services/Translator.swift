@@ -18,6 +18,8 @@ final class Translator: ObservableObject {
     struct Route: Equatable {
         var source: Locale.Language
         var target: Locale.Language
+
+        var flipped: Route { Route(source: target, target: source) }
     }
 
     /// Keyed by the pane's debounced task. The counter is what makes a retry of
@@ -28,6 +30,12 @@ final class Translator: ObservableObject {
     }
 
     @Published var input = ""
+    /// The pair the user has settled on, kept across launches — a direction is
+    /// a preference, not something to re-pick every morning.
+    @Published private(set) var pair = Route(source: english, target: russian)
+    /// Every language macOS can translate between, for the two pickers. Empty
+    /// until the framework answers, which takes a moment on first use.
+    @Published private(set) var languages: [Locale.Language] = []
     @Published private(set) var output = ""
     @Published private(set) var failure: String?
     /// The failure is a missing language pack, which is a thing the user can
@@ -35,21 +43,91 @@ final class Translator: ObservableObject {
     @Published private(set) var needsDownload = false
 
     private var attempt = 0
+    /// Set by the swap button and by picking a language: the user has said
+    /// which way round it goes, so the script check below stops second-guessing
+    /// them — until the field is emptied and there is nothing left to guess at.
+    private var chosen = false
+
+    private static let sourceKey = "translateSource"
+    private static let targetKey = "translateTarget"
+
+    init() {
+        let defaults = UserDefaults.standard
+        if let source = defaults.string(forKey: Self.sourceKey),
+           let target = defaults.string(forKey: Self.targetKey) {
+            pair = Route(source: Locale.Language(identifier: source), target: Locale.Language(identifier: target))
+        }
+        Task {
+            let supported = await LanguageAvailability().supportedLanguages
+            languages = supported.sorted {
+                Self.title($0).localizedStandardCompare(Self.title($1)) == .orderedAscending
+            }
+        }
+    }
 
     var request: Request { Request(text: input, attempt: attempt) }
     var trimmed: String { input.trimmingCharacters(in: .whitespacesAndNewlines) }
-    var route: Route { Self.route(for: trimmed) }
 
-    /// Russian goes out to English, everything else comes in to Russian.
+    /// The chosen pair, flipped when the text is plainly written in the target's
+    /// alphabet rather than the source's — typing Russian into a panel set to
+    /// English → Russian means translating out of Russian, not into it.
     ///
     /// Decided by script rather than by language detection: a single word is
     /// far too short to identify reliably, and "привет" comes back as Bulgarian
-    /// often enough to matter.
-    static func route(for text: String) -> Route {
+    /// often enough to matter. Only Cyrillic is weighed, because that is the one
+    /// signal that tells the two sides apart at a glance; a pair written in one
+    /// alphabet has nothing to tell apart and is left exactly as chosen.
+    var route: Route {
+        let text = trimmed
+        guard !chosen, !text.isEmpty else { return pair }
         let cyrillic = text.unicodeScalars.contains { (0x0400...0x04FF).contains($0.value) }
-        return cyrillic
-            ? Route(source: russian, target: english)
-            : Route(source: english, target: russian)
+        guard cyrillic != Self.isCyrillic(pair.source), cyrillic == Self.isCyrillic(pair.target) else { return pair }
+        return pair.flipped
+    }
+
+    private static func isCyrillic(_ language: Locale.Language) -> Bool {
+        language.script?.identifier == "Cyrl"
+    }
+
+    // MARK: - Choosing
+
+    /// Turns the translation around: the direction flips, and what came out
+    /// goes back in as the thing to translate. Anything else would leave the
+    /// panel translating English as though it were Russian.
+    func swap() {
+        let translated = output
+        settle(route.flipped)
+        if !translated.isEmpty { input = translated }
+    }
+
+    /// Picking the language the other side already holds means the user wants
+    /// them the other way round — there is nothing else it could mean, and
+    /// refusing the pick would leave them to work out why nothing happened.
+    func choose(source: Locale.Language) {
+        let picked = Self.normalized(source)
+        settle(picked == route.target ? route.flipped : Route(source: picked, target: route.target))
+    }
+
+    func choose(target: Locale.Language) {
+        let picked = Self.normalized(target)
+        settle(picked == route.source ? route.flipped : Route(source: route.source, target: picked))
+    }
+
+    private func settle(_ new: Route) {
+        chosen = true
+        pair = new
+        UserDefaults.standard.set(new.source.minimalIdentifier, forKey: Self.sourceKey)
+        UserDefaults.standard.set(new.target.minimalIdentifier, forKey: Self.targetKey)
+        // The pane only translates again when the request changes, and the text
+        // has not — a new direction is exactly as much of a reason as a retry.
+        retry()
+    }
+
+    /// `supportedLanguages` hands back regions the panel has no use for — "en"
+    /// arrives as `en-US`, which is unequal to the "en" everything else here
+    /// says. Stripped down, the two sides compare.
+    private static func normalized(_ language: Locale.Language) -> Locale.Language {
+        Locale.Language(identifier: language.minimalIdentifier)
     }
 
     func retry() {
@@ -60,6 +138,9 @@ final class Translator: ObservableObject {
         output = ""
         failure = nil
         needsDownload = false
+        // An empty field is a fresh start: whatever direction was set by hand
+        // for the last thing typed has nothing left to apply to.
+        chosen = false
     }
 
     func reset() {
@@ -118,6 +199,14 @@ final class Translator: ObservableObject {
             return language.languageCode?.identifier.uppercased() ?? "?"
         }
         return name.prefix(1).uppercased() + name.dropFirst()
+    }
+
+    /// "Английский (Великобритания)" — the full name, for the picker, where the
+    /// only thing distinguishing two entries may be the region.
+    static func title(_ language: Locale.Language) -> String {
+        let identifier = language.minimalIdentifier
+        let name = Locale(identifier: appLanguage).localizedString(forIdentifier: identifier)
+        return (name ?? identifier).sentenceCased
     }
 
     /// Short code for the header badge — "EN → RU" reads at a glance where a
