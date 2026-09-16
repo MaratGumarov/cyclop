@@ -239,7 +239,11 @@ final class CalendarStore: ObservableObject {
             .map { event in
                 let link = MeetingLink.find(in: event)
                 return Meeting(
-                    id: event.eventIdentifier ?? "\(event.startDate.timeIntervalSince1970)-\(event.title ?? "")",
+                    // Every occurrence of a recurring event shares one
+                    // `eventIdentifier`, so the start goes into the id too.
+                    // Without it a weekly meeting stayed "already announced"
+                    // after its first peek, and repeats collided in the list.
+                    id: "\(event.eventIdentifier ?? event.title ?? "")@\(event.startDate.timeIntervalSince1970)",
                     title: event.title ?? localized("Untitled"),
                     start: event.startDate,
                     end: event.endDate,
