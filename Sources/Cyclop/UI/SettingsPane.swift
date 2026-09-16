@@ -8,10 +8,18 @@ import ServiceManagement
 /// other than as a menu that grows a new row per feature.
 struct SettingsPane: View {
     @ObservedObject var shelf: ShelfStore
+    /// Raised only while the key field is open. Settings is otherwise a tab of
+    /// switches, and a tab of switches has no business dimming the caret of
+    /// whatever the user was actually working in.
+    @Binding var wantsKeyboard: Bool
 
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var saveClipboardImages = NotchViewModel.saveClipboardImagesEnabled
     @State private var screenshotUsage: (files: Int, bytes: Int64) = (0, 0)
+    @State private var hasKey = Gemini.key != nil
+    @State private var editingKey = false
+    @State private var draftKey = ""
+    @FocusState private var keyFocused: Bool
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -54,6 +62,29 @@ struct SettingsPane: View {
                     }
                 }
 
+                section(localized("Translation")) {
+                    if editingKey {
+                        keyField
+                    } else {
+                        actionRow(
+                            symbol: "key",
+                            title: hasKey ? localized("Replace Gemini API Key") : localized("Add Gemini API Key")
+                        ) {
+                            beginEditingKey()
+                        }
+                    }
+                    if hasKey {
+                        actionRow(symbol: "trash", title: localized("Remove Gemini API Key")) {
+                            Gemini.key = nil
+                            hasKey = false
+                        }
+                    } else {
+                        actionRow(symbol: "safari", title: localized("Get a Free Key")) {
+                            NSWorkspace.shared.open(Gemini.keyURL)
+                        }
+                    }
+                }
+
                 section(localized("Snippets")) {
                     actionRow(symbol: "doc.text", title: localized("Show Snippets File")) {
                         SnippetStore.reveal()
@@ -71,8 +102,63 @@ struct SettingsPane: View {
         .onAppear {
             launchAtLogin = SMAppService.mainApp.status == .enabled
             saveClipboardImages = NotchViewModel.saveClipboardImagesEnabled
+            hasKey = Gemini.key != nil
             refreshUsage()
         }
+        // Leaving the tab with the field open must not leave the panel holding
+        // the keyboard, and must not leave a key half-typed on screen either.
+        .onDisappear { cancelEditingKey() }
+    }
+
+    // MARK: - Gemini key
+
+    private var keyField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "key")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Theme.secondary)
+                .frame(width: 16)
+            // Secure: the panel sits over whatever the user is sharing or
+            // presenting, and a key is a credential like any other.
+            SecureField(localized("Paste the key"), text: $draftKey)
+                .textFieldStyle(.plain)
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(.white)
+                .tint(Theme.secondary)
+                .focused($keyFocused)
+                .onSubmit { commitKey() }
+                .onKeyPress(.escape) {
+                    cancelEditingKey()
+                    return .handled
+                }
+            Button(localized("Save")) { commitKey() }
+                .buttonStyle(.plain)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(draftKey.isEmpty ? Theme.tertiary : .white)
+                .disabled(draftKey.isEmpty)
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 26)
+    }
+
+    private func beginEditingKey() {
+        draftKey = ""
+        editingKey = true
+        wantsKeyboard = true
+        keyFocused = true
+    }
+
+    private func commitKey() {
+        Gemini.key = draftKey
+        hasKey = Gemini.key != nil
+        cancelEditingKey()
+    }
+
+    private func cancelEditingKey() {
+        guard editingKey else { return }
+        draftKey = ""
+        editingKey = false
+        wantsKeyboard = false
     }
 
     private var clearTitle: String {

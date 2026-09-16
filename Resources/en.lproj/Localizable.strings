@@ -53,13 +53,25 @@
 "Jot something down…" = "Jot something down…";
 
 /* Translate */
-"Translation Languages…" = "Translation Languages…";
-"Swap languages" = "Swap languages";
+"Retry" = "Retry";
 "Translate from" = "Translate from";
 "Translate into" = "Translate into";
-"Retry" = "Retry";
-"The %@ → %@ language pack is not installed." = "The %@ → %@ language pack is not installed.";
-"macOS does not translate this pair of languages." = "macOS does not translate this pair of languages.";
+"Swap languages" = "Swap languages";
+"Add a Gemini API key in Settings." = "Add a Gemini API key in Settings.";
+"Google rejected the API key." = "Google rejected the API key.";
+"The free Gemini quota is spent for now." = "The free Gemini quota is spent for now.";
+"Gemini is busy — try again." = "Gemini is busy — try again.";
+"Gemini answered with an error (%d)." = "Gemini answered with an error (%d).";
+"Gemini returned nothing." = "Gemini returned nothing.";
+
+/* Settings tab — translation */
+"Translation" = "Translation";
+"Add Gemini API Key" = "Add Gemini API Key";
+"Replace Gemini API Key" = "Replace Gemini API Key";
+"Remove Gemini API Key" = "Remove Gemini API Key";
+"Get a Free Key" = "Get a Free Key";
+"Paste the key" = "Paste the key";
+"Save" = "Save";
 
 /* Calendar */
 "Join" = "Join";

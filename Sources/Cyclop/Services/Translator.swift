@@ -1,133 +1,98 @@
 import AppKit
-import Translation
 
-/// Apple's on-device translator, driven from the panel.
-///
-/// The session is not ours to create: `translationTask` hands one over and owns
-/// its lifetime, so everything here is about deciding *what* to translate and
-/// holding the result. `TranslatePane` supplies the session.
+/// What the translate tab holds: the pair of languages, the text on both
+/// sides, and the last thing that went wrong. The translating itself is
+/// `Gemini`'s.
 @MainActor
 final class Translator: ObservableObject {
-    static let russian = Locale.Language(identifier: "ru")
-    static let english = Locale.Language(identifier: "en")
+    /// A language the panel offers. The code is ISO 639-1, which is both what
+    /// `Locale` names for the picker and what the model is told to work in.
+    struct Language: Identifiable, Hashable {
+        let code: String
+        var id: String { code }
 
-    /// Both ends are always named. Leaving the source to the framework looks
-    /// tempting, but its identifier is a separate asset that is not installed
-    /// either — auto-detection fails with `unableToIdentifyLanguage`, and the
-    /// translation that follows hangs instead of returning an error.
-    struct Route: Equatable {
-        var source: Locale.Language
-        var target: Locale.Language
+        /// "Русский", "English" — in the language the panel itself is in, not
+        /// the system's: those two can differ, and a column headed in one
+        /// language above a button worded in another reads as a mistake.
+        var name: String {
+            Locale(identifier: appLanguage).localizedString(forLanguageCode: code)?.sentenceCased
+                ?? code.uppercased()
+        }
 
-        var flipped: Route { Route(source: target, target: source) }
+        /// What the model is told. English names, because that is the language
+        /// the instruction around them is written in.
+        var englishName: String {
+            Locale(identifier: "en").localizedString(forLanguageCode: code) ?? code
+        }
     }
 
-    /// Keyed by the pane's debounced task. The counter is what makes a retry of
-    /// unchanged text a new request rather than a no-op.
+    /// Not a capability list — a model translates anything — but a menu, and a
+    /// menu is only useful while it stays short enough to look through. These
+    /// are the languages this panel is plausibly pointed at, sorted by the
+    /// name they show under.
+    static let languages: [Language] = [
+        "ar", "az", "be", "bg", "cs", "da", "de", "el", "en", "es", "et", "fa",
+        "fi", "fr", "he", "hi", "hr", "hu", "hy", "id", "it", "ja", "ka", "kk",
+        "ko", "ky", "lt", "lv", "nl", "no", "pl", "pt", "ro", "ru", "sk", "sl",
+        "sr", "sv", "th", "tr", "tt", "uk", "uz", "vi", "zh",
+    ]
+    .map(Language.init(code:))
+    .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+
+    static func language(_ code: String?) -> Language? {
+        guard let code else { return nil }
+        return languages.first { $0.code == code }
+    }
+
+    /// Keyed by the pane's debounced task: a change to any part of it is a new
+    /// request. The counter is what makes a retry of unchanged text one too.
     struct Request: Equatable {
         var text: String
+        var source: String
+        var target: String
         var attempt: Int
     }
 
     @Published var input = ""
-    /// The pair the user has settled on, kept across launches — a direction is
-    /// a preference, not something to re-pick every morning.
-    @Published private(set) var pair = Route(source: english, target: russian)
-    /// Every language macOS can translate between, for the two pickers. Empty
-    /// until the framework answers, which takes a moment on first use.
-    @Published private(set) var languages: [Locale.Language] = []
     @Published private(set) var output = ""
     @Published private(set) var failure: String?
-    /// The failure is a missing language pack, which is a thing the user can
-    /// go and fix — so the pane offers the button that takes them there.
-    @Published private(set) var needsDownload = false
+    /// The failure is a missing or refused key, which is a thing the user can
+    /// go and fix — so the pane offers the way to Settings.
+    @Published private(set) var needsKey = false
+
+    @Published var source: Language { didSet { save() } }
+    @Published var target: Language { didSet { save() } }
 
     private var attempt = 0
-    /// Set by the swap button and by picking a language: the user has said
-    /// which way round it goes, so the script check below stops second-guessing
-    /// them — until the field is emptied and there is nothing left to guess at.
-    private var chosen = false
 
     private static let sourceKey = "translateSource"
     private static let targetKey = "translateTarget"
 
     init() {
         let defaults = UserDefaults.standard
-        if let source = defaults.string(forKey: Self.sourceKey),
-           let target = defaults.string(forKey: Self.targetKey) {
-            pair = Route(source: Locale.Language(identifier: source), target: Locale.Language(identifier: target))
-        }
-        Task {
-            let supported = await LanguageAvailability().supportedLanguages
-            languages = supported.sorted {
-                Self.title($0).localizedStandardCompare(Self.title($1)) == .orderedAscending
-            }
-        }
+        source = Self.language(defaults.string(forKey: Self.sourceKey)) ?? Language(code: "en")
+        target = Self.language(defaults.string(forKey: Self.targetKey)) ?? Language(code: "ru")
     }
 
-    var request: Request { Request(text: input, attempt: attempt) }
+    var request: Request {
+        Request(text: trimmed, source: source.code, target: target.code, attempt: attempt)
+    }
+
     var trimmed: String { input.trimmingCharacters(in: .whitespacesAndNewlines) }
 
-    /// The chosen pair, flipped when the text is plainly written in the target's
-    /// alphabet rather than the source's — typing Russian into a panel set to
-    /// English → Russian means translating out of Russian, not into it.
-    ///
-    /// Decided by script rather than by language detection: a single word is
-    /// far too short to identify reliably, and "привет" comes back as Bulgarian
-    /// often enough to matter. Only Cyrillic is weighed, because that is the one
-    /// signal that tells the two sides apart at a glance; a pair written in one
-    /// alphabet has nothing to tell apart and is left exactly as chosen.
-    var route: Route {
-        let text = trimmed
-        guard !chosen, !text.isEmpty else { return pair }
-        let cyrillic = text.unicodeScalars.contains { (0x0400...0x04FF).contains($0.value) }
-        guard cyrillic != Self.isCyrillic(pair.source), cyrillic == Self.isCyrillic(pair.target) else { return pair }
-        return pair.flipped
-    }
-
-    private static func isCyrillic(_ language: Locale.Language) -> Bool {
-        language.script?.identifier == "Cyrl"
-    }
-
-    // MARK: - Choosing
-
-    /// Turns the translation around: the direction flips, and what came out
-    /// goes back in as the thing to translate. Anything else would leave the
-    /// panel translating English as though it were Russian.
+    /// Both sides turn around at once, text included. Turning only the
+    /// languages would leave the box holding text in what has just become the
+    /// target language, and the next translation would be a no-op — the swap
+    /// is pressed precisely when the pair was the wrong way round, and the
+    /// answer already on screen is the thing to carry on from.
     func swap() {
-        let translated = output
-        settle(route.flipped)
-        if !translated.isEmpty { input = translated }
-    }
-
-    /// Picking the language the other side already holds means the user wants
-    /// them the other way round — there is nothing else it could mean, and
-    /// refusing the pick would leave them to work out why nothing happened.
-    func choose(source: Locale.Language) {
-        let picked = Self.normalized(source)
-        settle(picked == route.target ? route.flipped : Route(source: picked, target: route.target))
-    }
-
-    func choose(target: Locale.Language) {
-        let picked = Self.normalized(target)
-        settle(picked == route.source ? route.flipped : Route(source: route.source, target: picked))
-    }
-
-    private func settle(_ new: Route) {
-        chosen = true
-        pair = new
-        UserDefaults.standard.set(new.source.minimalIdentifier, forKey: Self.sourceKey)
-        UserDefaults.standard.set(new.target.minimalIdentifier, forKey: Self.targetKey)
-        // The pane only translates again when the request changes, and the text
-        // has not — a new direction is exactly as much of a reason as a retry.
-        retry()
-    }
-
-    /// `supportedLanguages` hands back regions the panel has no use for — "en"
-    /// arrives as `en-US`, which is unequal to the "en" everything else here
-    /// says. Stripped down, the two sides compare.
-    private static func normalized(_ language: Locale.Language) -> Locale.Language {
-        Locale.Language(identifier: language.minimalIdentifier)
+        let wasSource = source
+        source = target
+        target = wasSource
+        if !output.isEmpty {
+            input = output
+            output = ""
+        }
     }
 
     func retry() {
@@ -137,10 +102,7 @@ final class Translator: ObservableObject {
     func clear() {
         output = ""
         failure = nil
-        needsDownload = false
-        // An empty field is a fresh start: whatever direction was set by hand
-        // for the last thing typed has nothing left to apply to.
-        chosen = false
+        needsKey = false
     }
 
     func reset() {
@@ -148,36 +110,21 @@ final class Translator: ObservableObject {
         clear()
     }
 
-    func run(_ session: TranslationSession) async {
+    func translate() async {
         let text = trimmed
         guard !text.isEmpty else { clear(); return }
-        guard let source = session.sourceLanguage, let target = session.targetLanguage else { return }
-
-        // No language pack ships installed. `prepareTranslation()` is what asks
-        // for one, but it blocks until its system prompt is answered — and that
-        // prompt has nowhere to appear over a borderless panel of an app that
-        // never activates, so it would hang forever. Check instead, and send
-        // the user to the one place that can actually install it.
-        let status = await LanguageAvailability().status(from: source, to: target)
-        guard status == .installed else {
-            output = ""
-            needsDownload = status == .supported
-            failure = needsDownload
-                ? localized("The %@ → %@ language pack is not installed.", Self.name(source), Self.name(target))
-                : localized("macOS does not translate this pair of languages.")
-            return
-        }
-
         do {
-            let response = try await session.translate(text)
+            let translated = try await Gemini.translate(text, from: source.englishName, to: target.englishName)
             guard !Task.isCancelled else { return }
-            output = response.targetText
+            output = translated
             failure = nil
-            needsDownload = false
+            needsKey = false
+        } catch is CancellationError {
+            return
         } catch {
             guard !Task.isCancelled else { return }
             output = ""
-            needsDownload = false
+            needsKey = (error as? Gemini.Failure)?.needsKey ?? false
             failure = error.localizedDescription
         }
     }
@@ -189,36 +136,9 @@ final class Translator: ObservableObject {
         pasteboard.setString(output, forType: .string)
     }
 
-    /// "Русский", "English" — for the column headers. Named in the language the
-    /// panel itself is in, not in the system's: those two can differ, and a
-    /// column headed in one language above a button worded in another reads as
-    /// a mistake.
-    static func name(_ language: Locale.Language) -> String {
-        guard let code = language.languageCode?.identifier,
-              let name = Locale(identifier: appLanguage).localizedString(forLanguageCode: code) else {
-            return language.languageCode?.identifier.uppercased() ?? "?"
-        }
-        return name.prefix(1).uppercased() + name.dropFirst()
-    }
-
-    /// "Английский (Великобритания)" — the full name, for the picker, where the
-    /// only thing distinguishing two entries may be the region.
-    static func title(_ language: Locale.Language) -> String {
-        let identifier = language.minimalIdentifier
-        let name = Locale(identifier: appLanguage).localizedString(forIdentifier: identifier)
-        return (name ?? identifier).sentenceCased
-    }
-
-    /// Short code for the header badge — "EN → RU" reads at a glance where a
-    /// spelled-out name would not fit in the strip.
-    static func code(_ language: Locale.Language) -> String {
-        language.languageCode?.identifier.uppercased() ?? "?"
-    }
-
-    /// System Settings → General → Language & Region, which is where the
-    /// "Translation Languages…" button lives.
-    static func openLanguageSettings() {
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.Localization-Settings.extension") else { return }
-        NSWorkspace.shared.open(url)
+    private func save() {
+        let defaults = UserDefaults.standard
+        defaults.set(source.code, forKey: Self.sourceKey)
+        defaults.set(target.code, forKey: Self.targetKey)
     }
 }

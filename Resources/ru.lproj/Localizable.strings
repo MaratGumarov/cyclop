@@ -52,13 +52,25 @@
 "Jot something down…" = "Набросай что-нибудь…";
 
 /* Перевод */
-"Translation Languages…" = "Языки перевода…";
-"Swap languages" = "Поменять языки местами";
-"Translate from" = "Переводить с";
-"Translate into" = "Переводить на";
 "Retry" = "Повторить";
-"The %@ → %@ language pack is not installed." = "Не скачан языковой пакет %@ → %@.";
-"macOS does not translate this pair of languages." = "macOS не переводит эту пару языков.";
+"Translate from" = "С языка";
+"Translate into" = "На язык";
+"Swap languages" = "Поменять языки местами";
+"Add a Gemini API key in Settings." = "Добавь ключ Gemini API в настройках.";
+"Google rejected the API key." = "Google не принял ключ.";
+"The free Gemini quota is spent for now." = "Бесплатная квота Gemini пока исчерпана.";
+"Gemini is busy — try again." = "Gemini занят — попробуй ещё раз.";
+"Gemini answered with an error (%d)." = "Gemini ответил ошибкой (%d).";
+"Gemini returned nothing." = "Gemini ничего не вернул.";
+
+/* Настройки — перевод */
+"Translation" = "Перевод";
+"Add Gemini API Key" = "Добавить ключ Gemini API";
+"Replace Gemini API Key" = "Заменить ключ Gemini API";
+"Remove Gemini API Key" = "Удалить ключ Gemini API";
+"Get a Free Key" = "Получить бесплатный ключ";
+"Paste the key" = "Вставь ключ";
+"Save" = "Сохранить";
 
 /* Календарь */
 "Join" = "Подключиться";

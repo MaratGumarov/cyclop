@@ -36,8 +36,12 @@ final class NotchViewModel: ObservableObject {
         }
 
         /// Tabs with a field in them. Landing on one hands it the keyboard, so
-        /// that arriving and typing is a single move.
-        var needsKeyboard: Bool { self == .translate || self == .snippets || self == .notes }
+        /// that arriving and typing is a single move. Settings is on the list
+        /// for one row — the API key — which is pasted more often than typed
+        /// but has to accept both.
+        var needsKeyboard: Bool {
+            self == .translate || self == .snippets || self == .notes || self == .settings
+        }
 
         /// Tabs a click hands the keyboard to. The shelf has no field, so
         /// merely hovering onto it must not dim the caret of the window
