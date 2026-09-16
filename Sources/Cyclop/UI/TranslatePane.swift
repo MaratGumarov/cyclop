@@ -1,5 +1,4 @@
 import SwiftUI
-import Translation
 
 /// Two columns, the way every translator is laid out: source on the left,
 /// result on the right. The left one sits on a surface — that is the whole
@@ -11,9 +10,15 @@ struct TranslatePane: View {
     /// clicks into another app, and the field follows it — the caret has to
     /// stop blinking here when it has genuinely gone elsewhere.
     @Binding var wantsKeyboard: Bool
+    /// Where the key is entered. The pane knows it is missing; only the panel
+    /// knows how to get to the tab that takes it.
+    var openSettings: () -> Void
+
+    /// Which end of the pair the language list is open for, if either.
+    private enum Side { case source, target }
 
     @FocusState private var focused: Bool
-    @State private var configuration: TranslationSession.Configuration?
+    @State private var picking: Side?
     /// Measured once, off the layout path. See `body`.
     @State private var paneSize: CGSize = .zero
 
@@ -40,13 +45,21 @@ struct TranslatePane: View {
                     .onChange(of: proxy.size) { _, new in paneSize = new }
             }
         )
+        // The list covers the pane rather than dropping out of the header.
+        // A menu is a window of its own, and it would hang below a panel that
+        // closes the moment the pointer leaves it — so the pointer would have
+        // to leave the panel to reach the language it came for.
+        .overlay {
+            if let picking {
+                languages(for: picking)
+                    .transition(.opacity)
+            }
+        }
+        .animation(Theme.contentAnimation, value: picking)
         .padding(.top, 2)
-        // One task for both the text and the retry counter: a keystroke
+        // One task for the text, the pair and the retry counter: a keystroke
         // cancels the pending sleep, so only a pause actually translates.
         .task(id: translator.request) { await schedule() }
-        .translationTask(configuration) { session in
-            await translator.run(session)
-        }
         .onAppear { focused = wantsKeyboard }
         .onChange(of: wantsKeyboard) { _, wants in focused = wants }
     }
@@ -54,7 +67,17 @@ struct TranslatePane: View {
     // MARK: - Left
 
     private func source(_ font: CGFloat) -> some View {
-        column(Translator.name(translator.route.source)) {
+        column {
+            title(translator.source.name) { picking = picking == .source ? nil : .source }
+        } accessory: {
+            Button { translator.swap() } label: {
+                Image(systemName: "arrow.left.arrow.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.secondary)
+            }
+            .buttonStyle(.plain)
+            .help(localized("Swap languages"))
+
             if !translator.input.isEmpty {
                 Button { translator.reset() } label: {
                     Image(systemName: "xmark")
@@ -87,7 +110,13 @@ struct TranslatePane: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .contentShape(Rectangle())
                 .onKeyPress(.escape) {
-                    translator.reset()
+                    // The list first: Escape closes what is on top of the
+                    // pane before it throws away what is in it.
+                    if picking != nil {
+                        picking = nil
+                    } else {
+                        translator.reset()
+                    }
                     return .handled
                 }
         }
@@ -101,7 +130,9 @@ struct TranslatePane: View {
     // MARK: - Right
 
     private func result(_ font: CGFloat) -> some View {
-        column(Translator.name(translator.route.target)) {
+        column {
+            title(translator.target.name) { picking = picking == .target ? nil : .target }
+        } accessory: {
             if !translator.output.isEmpty {
                 CopyButton { translator.copyOutput() }
             }
@@ -120,10 +151,10 @@ struct TranslatePane: View {
                     .foregroundStyle(Theme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 10) {
-                    if translator.needsDownload {
-                        Button("Translation Languages…") { Translator.openLanguageSettings() }
+                    if translator.needsKey {
+                        Button(localized("Settings")) { openSettings() }
                     }
-                    Button("Retry") { translator.retry() }
+                    Button(localized("Retry")) { translator.retry() }
                 }
                 .buttonStyle(.plain)
                 .font(.system(size: 10, weight: .medium))
@@ -145,6 +176,84 @@ struct TranslatePane: View {
             // more movement in the column than the result it announces.
             Color.clear
         }
+    }
+
+    // MARK: - Languages
+
+    private func languages(for side: Side) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text((side == .source ? localized("Translate from") : localized("Translate into")).uppercased())
+                    .font(.system(size: 9, weight: .semibold))
+                    .tracking(0.8)
+                    .foregroundStyle(Theme.tertiary)
+                Spacer(minLength: 4)
+                Button { picking = nil } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(height: 14)
+
+            ScrollView(showsIndicators: false) {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 104), spacing: 4)],
+                    alignment: .leading,
+                    spacing: 4
+                ) {
+                    ForEach(Translator.languages) { language in
+                        entry(language, side: side)
+                    }
+                }
+            }
+        }
+        .padding(10)
+        // Opaque, not a blur: the pane underneath is text, and text showing
+        // through a list of language names is unreadable at this size.
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.black.opacity(0.94))
+        )
+    }
+
+    private func entry(_ language: Translator.Language, side: Side) -> some View {
+        let current = side == .source ? translator.source : translator.target
+        let isCurrent = language == current
+        return Button {
+            choose(language, for: side)
+        } label: {
+            Text(language.name)
+                .font(.system(size: 11, weight: isCurrent ? .semibold : .regular))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .foregroundStyle(isCurrent ? Color.white : Theme.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 6)
+                .frame(height: 22)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(isCurrent ? Theme.surfaceHover : Color.clear)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Picking the language the other side already holds turns the pair round
+    /// rather than leaving both ends on the same language, which translates
+    /// nothing.
+    private func choose(_ language: Translator.Language, for side: Side) {
+        let other = side == .source ? translator.target : translator.source
+        if language == other {
+            translator.swap()
+        } else if side == .source {
+            translator.source = language
+        } else {
+            translator.target = language
+        }
+        picking = nil
     }
 
     // MARK: - Type size
@@ -183,17 +292,32 @@ struct TranslatePane: View {
 
     // MARK: - Shared
 
-    private func column<Accessory: View, Content: View>(
-        _ title: String,
+    /// The column heading, which is also the button that opens the list. The
+    /// chevron is what says so — a name alone would read as a label.
+    private func title(_ name: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 3) {
+                Text(name.uppercased())
+                    .font(.system(size: 9, weight: .semibold))
+                    .tracking(0.8)
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 6, weight: .black))
+            }
+            .foregroundStyle(Theme.tertiary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func column<Title: View, Accessory: View, Content: View>(
+        @ViewBuilder title: () -> Title,
         @ViewBuilder accessory: () -> Accessory,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Text(title.uppercased())
-                    .font(.system(size: 9, weight: .semibold))
-                    .tracking(0.8)
-                    .foregroundStyle(Theme.tertiary)
+                title()
                 Spacer(minLength: 4)
                 accessory()
             }
@@ -207,25 +331,14 @@ struct TranslatePane: View {
     // MARK: - Scheduling
 
     private func schedule() async {
-        let text = translator.trimmed
-        guard !text.isEmpty else {
-            configuration = nil
+        guard !translator.trimmed.isEmpty else {
             translator.clear()
             return
         }
-        // Wait out the typing: a word is a handful of keystrokes, and a session
+        // Wait out the typing: a word is a handful of keystrokes, and a request
         // per letter would be both wasteful and visibly jumpy.
         try? await Task.sleep(for: .milliseconds(320))
         guard !Task.isCancelled else { return }
-
-        let route = Translator.route(for: text)
-        if var current = configuration, current.source == route.source, current.target == route.target {
-            // Same pair, different text. The modifier only re-runs when the
-            // configuration changes, and invalidating is how one says "again".
-            current.invalidate()
-            configuration = current
-        } else {
-            configuration = TranslationSession.Configuration(source: route.source, target: route.target)
-        }
+        await translator.translate()
     }
 }

@@ -36,8 +36,12 @@ final class NotchViewModel: ObservableObject {
         }
 
         /// Tabs with a field in them. Landing on one hands it the keyboard, so
-        /// that arriving and typing is a single move.
-        var needsKeyboard: Bool { self == .translate || self == .snippets || self == .notes }
+        /// that arriving and typing is a single move. Settings is on the list
+        /// for one row — the API key — which is pasted more often than typed
+        /// but has to accept both.
+        var needsKeyboard: Bool {
+            self == .translate || self == .snippets || self == .notes || self == .settings
+        }
 
         /// Which rail the icon sits on. The left one carries the original six
         /// and is full — icon height is a ceiling now, not a constant (#26,

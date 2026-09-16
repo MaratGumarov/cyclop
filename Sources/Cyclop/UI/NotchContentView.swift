@@ -160,13 +160,17 @@ struct NotchContentView: View {
         case .snippets:
             SnippetsPane(snippets: vm.snippets, privacy: vm.privacy, wantsKeyboard: $vm.wantsKeyboard)
         case .translate:
-            TranslatePane(translator: vm.translator, wantsKeyboard: $vm.wantsKeyboard)
+            TranslatePane(
+                translator: vm.translator,
+                wantsKeyboard: $vm.wantsKeyboard,
+                openSettings: { vm.tab = .settings }
+            )
         case .notes:
             NotesPane(notes: vm.notes, privacy: vm.privacy, wantsKeyboard: $vm.wantsKeyboard)
         case .teleprompter:
             TeleprompterPane(prompter: vm.teleprompter, wantsKeyboard: $vm.wantsKeyboard)
         case .settings:
-            SettingsPane(shelf: vm.shelf)
+            SettingsPane(shelf: vm.shelf, wantsKeyboard: $vm.wantsKeyboard)
         }
     }
 }
