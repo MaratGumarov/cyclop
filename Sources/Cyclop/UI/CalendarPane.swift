@@ -190,16 +190,21 @@ struct CalendarPane: View {
         }
     }
 
+    /// The provider's name alone where there is one — the camera glyph
+    /// already says "join", and spelling it out as well cost the row the
+    /// width the two buttons beside it needed ("Подключиться · Google Meet"
+    /// is most of the column on its own).
     private func joinPill(_ meeting: CalendarStore.Meeting) -> some View {
         MeetingPill(
             symbol: "video.fill",
-            title: Text(meeting.provider.map { localized("Join · %@", $0) } ?? localized("Join")),
+            title: Text(meeting.provider ?? localized("Join")),
             // A meeting already under way gets the bright capsule: by then
             // joining is the only thing anybody opened this tab for.
             style: meeting.isRunning ? .prominent : .neutral
         ) {
             calendar.join(meeting)
         }
+        .help(localized("Join"))
     }
 
     /// Joins and starts recording in one press, where there is something to
@@ -231,7 +236,9 @@ struct CalendarPane: View {
     private var recordingsPill: some View {
         MeetingPill(
             symbol: "folder",
-            title: Text(localized("Recordings")),
+            // The glyph on its own: this is the third capsule in a row of
+            // three, and it is the one nobody came for.
+            title: nil,
             style: .quiet
         ) {
             MeetingRecorder.reveal(recorder.lastFile)

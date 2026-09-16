@@ -46,7 +46,9 @@ struct MeetingPill: View {
     }
 
     let symbol: String
-    let title: Text
+    /// `nil` where the glyph says it on its own and the row has no width to
+    /// spare — the tooltip carries the wording then.
+    let title: Text?
     var style: Style = .neutral
     /// Set where the icon carries the meaning and the lettering stays quiet.
     var symbolTint: Color?
@@ -60,11 +62,19 @@ struct MeetingPill: View {
                 Image(systemName: symbol)
                     .font(.system(size: compact ? 9 : 10))
                     .foregroundStyle(symbolTint ?? foreground)
-                title
-                    .font(.system(size: compact ? 10.5 : 11, weight: .medium).monospacedDigit())
-                    .foregroundStyle(foreground)
+                if let title {
+                    title
+                        .font(.system(size: compact ? 10.5 : 11, weight: .medium).monospacedDigit())
+                        .foregroundStyle(foreground)
+                        // A capsule keeps its shape or it is not a capsule:
+                        // squeezed for width the lettering wrapped instead,
+                        // and three buttons turned into three circles of
+                        // stacked syllables.
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
             }
-            .padding(.horizontal, compact ? 9 : 12)
+            .padding(.horizontal, title == nil ? (compact ? 7 : 9) : (compact ? 9 : 12))
             .padding(.vertical, compact ? 5 : 7)
             .background(background)
             .contentShape(Capsule())
