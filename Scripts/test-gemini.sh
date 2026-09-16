@@ -14,7 +14,7 @@
 # сделана под теми именами, под которыми клиент её потом ищет.
 set -uo pipefail
 
-MODEL="${MODEL:-gemini-2.5-flash-lite}"
+MODEL="${MODEL:-gemini-flash-lite-latest}"
 KEY="${GEMINI_API_KEY:-$(security find-generic-password -s com.cyclop.app -a gemini -w 2>/dev/null)}"
 
 if [ -z "${KEY:-}" ]; then

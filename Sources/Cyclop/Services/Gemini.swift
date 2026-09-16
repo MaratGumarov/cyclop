@@ -12,8 +12,10 @@ import Security
 enum Gemini {
     /// Flash-Lite: the fastest thing on the free tier. The pane fires one
     /// request per typing pause and the answer is a sentence, so latency is
-    /// the whole experience here.
-    static let model = "gemini-2.5-flash-lite"
+    /// the whole experience here. The alias, not a pinned version: Google
+    /// retires Flash-Lite versions for new keys (2.5 answered 404), and the
+    /// alias moves along with them.
+    static let model = "gemini-flash-lite-latest"
 
     enum Failure: LocalizedError, Equatable {
         case noKey
